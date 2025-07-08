@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: archive_backup_prod
+      POSTGRES_USER: archive_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U archive_user -d archive_backup_prod"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Archive Backup Application
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      FLASK_CONFIG: production
+      DATABASE_URL: postgresql://archive_user:${POSTGRES_PASSWORD:-secure_password_change_me}@db:5432/archive_backup_prod
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-generate-a-secure-secret-key}
+    volumes:
+      - archive_storage:/var/lib/archive_backup/storage
+      - archive_logs:/var/log/archive_backup
+    ports:
+      - "5000:5000"
+    command: >
+      sh -c "flask db upgrade &&
+             gunicorn --config gunicorn.conf.py app:app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Celery Worker for background tasks
+  worker:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      FLASK_CONFIG: production
+      DATABASE_URL: postgresql://archive_user:${POSTGRES_PASSWORD:-secure_password_change_me}@db:5432/archive_backup_prod
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-generate-a-secure-secret-key}
+    volumes:
+      - archive_storage:/var/lib/archive_backup/storage
+      - archive_logs:/var/log/archive_backup
+    command: celery -A app.celery worker --loglevel=info
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - archive_storage:/var/lib/archive_backup/storage:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    restart: unless-stopped
+
+  # Certbot for SSL certificates
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    command: certonly --webroot --webroot-path=/var/www/certbot --email your-email@example.com --agree-tos --no-eff-email -d your-domain.com
+
+volumes:
+  postgres_data:
+  redis_data:
+  archive_storage:
+  archive_logs:
+  certbot_certs:
+  certbot_www:
+
+networks:
+  default:
+    name: archive_backup_network

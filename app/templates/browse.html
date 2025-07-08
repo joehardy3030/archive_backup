@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Shows - Archive Backup{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="h2">
+                <i class="bi bi-collection"></i> Browse Shows
+            </h1>
+            <p class="text-muted">Browse your backed up Archive.org shows</p>
+        </div>
+    </div>
+
+    <!-- Search/Filter Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-funnel"></i> Search & Filter
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('main.browse') }}">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="search_term" class="form-label">Search Term</label>
+                                <input type="text" class="form-control" id="search_term" name="search_term" 
+                                       value="{{ search_term }}" placeholder="Search shows, descriptions...">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="creator" class="form-label">Creator</label>
+                                <select class="form-select" id="creator" name="creator">
+                                    <option value="">All Creators</option>
+                                    {% for c in creators %}
+                                        <option value="{{ c }}" {% if c == selected_creator %}selected{% endif %}>
+                                            {{ c }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="year" class="form-label">Year</label>
+                                <select class="form-select" id="year" name="year">
+                                    <option value="">All Years</option>
+                                    {% for y in years %}
+                                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>
+                                            {{ y }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 mb-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-search"></i> Search
+                                    </button>
+                                    <a href="{{ url_for('main.browse') }}" class="btn btn-outline-secondary">
+                                        <i class="bi bi-x-circle"></i> Clear
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-list-ul"></i> Shows
+                        {% if pagination and pagination.total %}
+                            <span class="badge bg-secondary">{{ pagination.total }}</span>
+                        {% endif %}
+                    </h5>
+                    {% if pagination and pagination.total > 0 %}
+                        <small class="text-muted">
+                            Showing {{ pagination.per_page * (pagination.page - 1) + 1 }} - 
+                            {{ pagination.per_page * (pagination.page - 1) + pagination.items|length }} 
+                            of {{ pagination.total }} shows
+                        </small>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if items %}
+                        <div class="table-responsive">
+                            <table class="table table-hover show-table">
+                                <thead>
+                                    <tr>
+                                        <th>Show</th>
+                                        <th>Date</th>
+                                        <th>Venue</th>
+                                        <th>Creator</th>
+                                        <th>Status</th>
+                                        <th>Added</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in items %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ item.title or item.identifier }}</strong>
+                                            {% if item.description %}
+                                                <br><small class="text-muted">{{ item.description[:100] }}{% if item.description|length > 100 %}...{% endif %}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="show-date">{{ item.date or 'N/A' }}</span>
+                                        </td>
+                                        <td>{{ item.venue or 'N/A' }}</td>
+                                        <td>{{ item.creator or 'N/A' }}</td>
+                                        <td>
+                                            {% if item.is_backed_up %}
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-check-circle"></i> Backed Up
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-warning">
+                                                    <i class="bi bi-hourglass-split"></i> Metadata Only
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else 'N/A' }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <a href="{{ url_for('main.show_detail', identifier=item.identifier) }}" 
+                                                   class="btn btn-outline-primary btn-sm">
+                                                    <i class="bi bi-eye"></i> View
+                                                </a>
+                                                <a href="https://archive.org/details/{{ item.identifier }}" 
+                                                   target="_blank" class="btn btn-outline-secondary btn-sm">
+                                                    <i class="bi bi-box-arrow-up-right"></i> Archive.org
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        {% if pagination and pagination.pages > 1 %}
+                            <nav aria-label="Page navigation">
+                                <ul class="pagination justify-content-center">
+                                    {% if pagination.has_prev %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for('main.browse', page=pagination.prev_num, search_term=search_term, creator=selected_creator, year=selected_year) }}">
+                                                <i class="bi bi-chevron-left"></i> Previous
+                                            </a>
+                                        </li>
+                                    {% endif %}
+
+                                    {% for page_num in pagination.iter_pages() %}
+                                        {% if page_num %}
+                                            {% if page_num != pagination.page %}
+                                                <li class="page-item">
+                                                    <a class="page-link" href="{{ url_for('main.browse', page=page_num, search_term=search_term, creator=selected_creator, year=selected_year) }}">
+                                                        {{ page_num }}
+                                                    </a>
+                                                </li>
+                                            {% else %}
+                                                <li class="page-item active">
+                                                    <span class="page-link">{{ page_num }}</span>
+                                                </li>
+                                            {% endif %}
+                                        {% else %}
+                                            <li class="page-item disabled">
+                                                <span class="page-link">...</span>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+
+                                    {% if pagination.has_next %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for('main.browse', page=pagination.next_num, search_term=search_term, creator=selected_creator, year=selected_year) }}">
+                                                Next <i class="bi bi-chevron-right"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        {% endif %}
+
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+                            <h4 class="text-muted mt-3">No shows found</h4>
+                            {% if search_term or selected_creator or selected_year %}
+                                <p class="text-muted">Try adjusting your search criteria or clearing the filters.</p>
+                                <a href="{{ url_for('main.browse') }}" class="btn btn-outline-primary">
+                                    <i class="bi bi-x-circle"></i> Clear Filters
+                                </a>
+                            {% else %}
+                                <p class="text-muted">You haven't backed up any shows yet. Start by backing up your first show!</p>
+                                <a href="{{ url_for('main.index') }}" class="btn btn-primary">
+                                    <i class="bi bi-cloud-download"></i> Start Backup
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-submit search form on enter
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchForm = document.querySelector('form');
+        const searchInput = document.getElementById('search_term');
+        
+        if (searchInput) {
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchForm.submit();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

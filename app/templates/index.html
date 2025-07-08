@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Archive Backup{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="h2">
+                <i class="bi bi-speedometer2"></i> Archive Backup Dashboard
+            </h1>
+            <p class="text-muted">Monitor your Archive.org backup status and statistics</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body text-center">
+                    <div class="stat-number">{{ total_shows }}</div>
+                    <div class="text-muted">Total Shows</div>
+                    <small class="text-info">
+                        <i class="bi bi-collection"></i> Metadata stored
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body text-center">
+                    <div class="stat-number">{{ fully_backed_up }}</div>
+                    <div class="text-muted">Fully Backed Up</div>
+                    <small class="text-success">
+                        <i class="bi bi-check-circle"></i> With files
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body text-center">
+                    <div class="stat-number">
+                        {% if total_shows > 0 %}
+                            {{ "%.1f"|format((fully_backed_up / total_shows) * 100) }}%
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </div>
+                    <div class="text-muted">Backup Progress</div>
+                    <small class="text-warning">
+                        <i class="bi bi-graph-up"></i> Completion rate
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body text-center">
+                    <div class="stat-number">
+                        <i class="bi bi-heart-pulse text-success"></i>
+                    </div>
+                    <div class="text-muted">System Status</div>
+                    <small class="text-success">
+                        <i class="bi bi-check-circle"></i> Online
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-lightning"></i> Quick Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-2">
+                            <button class="btn btn-primary w-100" onclick="showQuickBackupModal()">
+                                <i class="bi bi-cloud-download"></i> Quick Backup
+                            </button>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('main.search_page') }}" class="btn btn-info w-100">
+                                <i class="bi bi-search"></i> Search Archive
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('main.browse') }}" class="btn btn-success w-100">
+                                <i class="bi bi-collection"></i> Browse Shows
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{{ url_for('main.stats') }}" class="btn btn-warning w-100">
+                                <i class="bi bi-bar-chart"></i> View Statistics
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Backups -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-clock-history"></i> Recent Backups
+                    </h5>
+                    <a href="{{ url_for('main.browse') }}" class="btn btn-sm btn-outline-primary">
+                        View All <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if recent_backups %}
+                        <div class="table-responsive">
+                            <table class="table table-hover show-table">
+                                <thead>
+                                    <tr>
+                                        <th>Show</th>
+                                        <th>Date</th>
+                                        <th>Venue</th>
+                                        <th>Creator</th>
+                                        <th>Status</th>
+                                        <th>Added</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for show in recent_backups %}
+                                    <tr>
+                                        <td>
+                                            <a href="{{ url_for('main.show_detail', identifier=show.identifier) }}" class="text-decoration-none">
+                                                <strong>{{ show.title or show.identifier }}</strong>
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <span class="show-date">{{ show.date or 'N/A' }}</span>
+                                        </td>
+                                        <td>{{ show.venue or 'N/A' }}</td>
+                                        <td>{{ show.creator or 'N/A' }}</td>
+                                        <td>
+                                            {% if show.is_backed_up %}
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-check-circle"></i> Backed Up
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-warning">
+                                                    <i class="bi bi-hourglass-split"></i> Metadata Only
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ show.created_at.strftime('%Y-%m-%d %H:%M') if show.created_at else 'N/A' }}
+                                            </small>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-2">No backups yet. Get started by backing up your first show!</p>
+                            <button class="btn btn-primary" onclick="showQuickBackupModal()">
+                                <i class="bi bi-cloud-download"></i> Start Backup
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Backup Modal -->
+<div class="modal fade" id="quickBackupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-cloud-download"></i> Quick Backup
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="quickBackupForm">
+                    <div class="mb-3">
+                        <label for="identifier" class="form-label">Archive.org Identifier</label>
+                        <input type="text" class="form-control" id="identifier" required
+                               placeholder="e.g., gd1977-05-08.sbd.hicks.4982.sbeok.shnf">
+                        <div class="form-text">
+                            Enter the Archive.org identifier for the show you want to backup.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="metadataOnly" checked>
+                            <label class="form-check-label" for="metadataOnly">
+                                Metadata only (faster)
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Uncheck to also download audio files (much slower and requires more storage).
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="performQuickBackup()">
+                    <i class="bi bi-cloud-download"></i> Start Backup
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Error/Success Messages -->
+<div id="alertContainer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showQuickBackupModal() {
+        const modal = new bootstrap.Modal(document.getElementById('quickBackupModal'));
+        modal.show();
+    }
+
+    function performQuickBackup() {
+        const identifier = document.getElementById('identifier').value.trim();
+        if (!identifier) {
+            showAlert('Please enter an Archive.org identifier', 'warning');
+            return;
+        }
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('quickBackupModal'));
+        modal.hide();
+
+        showAlert('Starting backup...', 'info');
+
+        fetch('/api/quick_backup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                identifier: identifier
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showAlert(data.error, 'danger');
+            } else {
+                showAlert(`Successfully backed up: ${data.title}`, 'success');
+                // Refresh the page after a delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            showAlert('Error performing backup: ' + error.message, 'danger');
+        });
+    }
+
+    // Auto-refresh stats every 30 seconds
+    setInterval(() => {
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(data => {
+                // Update stats if needed
+                console.log('Stats updated:', data);
+            })
+            .catch(error => {
+                console.error('Error refreshing stats:', error);
+            });
+    }, 30000);
+</script>
+{% endblock %} 

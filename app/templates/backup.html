@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}Backup Manager - Archive Backup{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="h2">
+                <i class="bi bi-cloud-download"></i> Backup Manager
+            </h1>
+            <p class="text-muted">Manage your Archive.org backups and download operations</p>
+        </div>
+    </div>
+
+    <!-- Backup Form -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-plus-circle"></i> Create New Backup
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="backupForm">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="identifier" class="form-label">Archive.org Identifier</label>
+                                    <input type="text" class="form-control" id="identifier" required
+                                           placeholder="e.g., gd1977-05-08.sbd.hicks.4982.sbeok.shnf">
+                                    <div class="form-text">
+                                        Enter the Archive.org identifier for the show you want to backup.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="backupType" class="form-label">Backup Type</label>
+                                    <select class="form-select" id="backupType">
+                                        <option value="metadata">Metadata Only</option>
+                                        <option value="files">Files Only</option>
+                                        <option value="full">Full Backup</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-cloud-download"></i> Start Backup
+                                </button>
+                                <button type="button" class="btn btn-info ms-2" onclick="checkStatus()">
+                                    <i class="bi bi-info-circle"></i> Check Status
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-activity"></i> Backup Status
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="statusContainer" class="text-center py-4">
+                        <i class="bi bi-hourglass-split text-muted" style="font-size: 2rem;"></i>
+                        <p class="text-muted mt-2">Enter an identifier above to check backup status</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Operations -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-list-check"></i> Batch Operations
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="batchForm">
+                        <div class="mb-3">
+                            <label for="identifierList" class="form-label">Identifier List</label>
+                            <textarea class="form-control" id="identifierList" rows="5"
+                                      placeholder="Enter one identifier per line:&#10;gd1977-05-08.sbd.hicks.4982.sbeok.shnf&#10;gd1977-05-09.sbd.hicks.4984.sbeok.shnf&#10;..."></textarea>
+                            <div class="form-text">
+                                Enter one Archive.org identifier per line for batch backup operations.
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="batchType" class="form-label">Batch Type</label>
+                                    <select class="form-select" id="batchType">
+                                        <option value="metadata">Metadata Only</option>
+                                        <option value="full">Full Backup</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="batchDelay" class="form-label">Delay Between Requests (seconds)</label>
+                                    <input type="number" class="form-control" id="batchDelay" value="2" min="1" max="10">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-lightning"></i> Start Batch Backup
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="row" id="progressSection" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-graph-up"></i> Progress
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="progressContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Single backup form
+    document.getElementById('backupForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const identifier = document.getElementById('identifier').value.trim();
+        const backupType = document.getElementById('backupType').value;
+        
+        if (!identifier) {
+            showAlert('Please enter an identifier', 'warning');
+            return;
+        }
+        
+        startBackup(identifier, backupType);
+    });
+
+    // Batch backup form
+    document.getElementById('batchForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const identifierList = document.getElementById('identifierList').value.trim();
+        const batchType = document.getElementById('batchType').value;
+        const delay = parseInt(document.getElementById('batchDelay').value);
+        
+        if (!identifierList) {
+            showAlert('Please enter at least one identifier', 'warning');
+            return;
+        }
+        
+        const identifiers = identifierList.split('\n').filter(id => id.trim());
+        startBatchBackup(identifiers, batchType, delay);
+    });
+
+    function startBackup(identifier, backupType) {
+        showAlert('Starting backup...', 'info');
+        
+        const endpoint = `/api/backup/${backupType}/${identifier}`;
+        
+        fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showAlert(data.error, 'danger');
+            } else {
+                showAlert(data.message, 'success');
+                checkStatus();
+            }
+        })
+        .catch(error => {
+            showAlert('Error: ' + error.message, 'danger');
+        });
+    }
+
+    function checkStatus() {
+        const identifier = document.getElementById('identifier').value.trim();
+        
+        if (!identifier) {
+            showAlert('Please enter an identifier to check status', 'warning');
+            return;
+        }
+        
+        fetch(`/api/backup/status/${identifier}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showAlert(data.error, 'danger');
+            } else {
+                displayStatus(data);
+            }
+        })
+        .catch(error => {
+            showAlert('Error checking status: ' + error.message, 'danger');
+        });
+    }
+
+    function displayStatus(data) {
+        const container = document.getElementById('statusContainer');
+        
+        const statusHtml = `
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">Show Information</h6>
+                            <p><strong>Identifier:</strong> ${data.identifier}</p>
+                            <p><strong>Title:</strong> ${data.show_metadata?.title || 'N/A'}</p>
+                            <p><strong>Date:</strong> ${data.show_metadata?.date || 'N/A'}</p>
+                            <p><strong>Venue:</strong> ${data.show_metadata?.venue || 'N/A'}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">Backup Status</h6>
+                            <p><strong>Metadata:</strong> 
+                                <span class="badge ${data.metadata_backed_up ? 'bg-success' : 'bg-secondary'}">
+                                    ${data.metadata_backed_up ? 'Backed Up' : 'Not Backed Up'}
+                                </span>
+                            </p>
+                            <p><strong>Files:</strong> 
+                                <span class="badge ${data.files_backed_up ? 'bg-success' : 'bg-secondary'}">
+                                    ${data.files_backed_up ? 'Backed Up' : 'Not Backed Up'}
+                                </span>
+                            </p>
+                            <p><strong>Downloaded Files:</strong> ${data.downloaded_files || 0} / ${data.total_files || 0}</p>
+                            <p><strong>Backup Date:</strong> ${data.backup_date ? formatDate(data.backup_date) : 'N/A'}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        container.innerHTML = statusHtml;
+    }
+
+    function startBatchBackup(identifiers, batchType, delay) {
+        const progressSection = document.getElementById('progressSection');
+        const progressContainer = document.getElementById('progressContainer');
+        
+        progressSection.style.display = 'block';
+        progressContainer.innerHTML = `
+            <div class="progress mb-3">
+                <div id="batchProgress" class="progress-bar" role="progressbar" style="width: 0%">
+                    0 / ${identifiers.length}
+                </div>
+            </div>
+            <div id="batchResults"></div>
+        `;
+        
+        processBatch(identifiers, batchType, delay, 0);
+    }
+
+    function processBatch(identifiers, batchType, delay, currentIndex) {
+        if (currentIndex >= identifiers.length) {
+            showAlert('Batch backup completed!', 'success');
+            return;
+        }
+        
+        const identifier = identifiers[currentIndex].trim();
+        const progressBar = document.getElementById('batchProgress');
+        const resultsContainer = document.getElementById('batchResults');
+        
+        // Update progress
+        const progress = ((currentIndex + 1) / identifiers.length) * 100;
+        progressBar.style.width = progress + '%';
+        progressBar.textContent = `${currentIndex + 1} / ${identifiers.length}`;
+        
+        // Add current item to results
+        const resultItem = document.createElement('div');
+        resultItem.className = 'alert alert-info';
+        resultItem.innerHTML = `<i class="bi bi-hourglass-split"></i> Processing: ${identifier}`;
+        resultsContainer.appendChild(resultItem);
+        
+        // Start backup
+        const endpoint = `/api/backup/${batchType}/${identifier}`;
+        
+        fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                resultItem.className = 'alert alert-danger';
+                resultItem.innerHTML = `<i class="bi bi-x-circle"></i> Error: ${identifier} - ${data.error}`;
+            } else {
+                resultItem.className = 'alert alert-success';
+                resultItem.innerHTML = `<i class="bi bi-check-circle"></i> Success: ${identifier} - ${data.message}`;
+            }
+            
+            // Process next item after delay
+            setTimeout(() => {
+                processBatch(identifiers, batchType, delay, currentIndex + 1);
+            }, delay * 1000);
+        })
+        .catch(error => {
+            resultItem.className = 'alert alert-danger';
+            resultItem.innerHTML = `<i class="bi bi-x-circle"></i> Error: ${identifier} - ${error.message}`;
+            
+            // Process next item after delay
+            setTimeout(() => {
+                processBatch(identifiers, batchType, delay, currentIndex + 1);
+            }, delay * 1000);
+        });
+    }
+</script>
+{% endblock %} 
