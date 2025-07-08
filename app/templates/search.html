@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+
+{% block title %}Search Archive - Archive Backup{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="h2">
+                <i class="bi bi-search"></i> Search Archive
+            </h1>
+            <p class="text-muted">Search Archive.org and your local backed up shows</p>
+        </div>
+    </div>
+
+    <!-- Search Form -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-funnel"></i> Search Parameters
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="searchForm">
+                        <div class="row">
+                            <!-- Search Term / Song -->
+                            <div class="col-md-6 mb-3">
+                                <label for="searchTerm" class="form-label">
+                                    <i class="bi bi-music-note"></i> Search Term / Song
+                                </label>
+                                <input type="text" class="form-control" id="searchTerm" 
+                                       placeholder="e.g., Fire on the Mountain, acoustic set...">
+                                <div class="form-text">Search songs, setlists, or descriptions</div>
+                            </div>
+
+                            <!-- Venue -->
+                            <div class="col-md-6 mb-3">
+                                <label for="venue" class="form-label">
+                                    <i class="bi bi-geo-alt"></i> Venue
+                                </label>
+                                <input type="text" class="form-control" id="venue" 
+                                       placeholder="e.g., Madison Square Garden, Fillmore West...">
+                                <div class="form-text">Search by venue name</div>
+                            </div>
+
+                            <!-- Date Range -->
+                            <div class="col-md-6 mb-3">
+                                <label for="startYear" class="form-label">
+                                    <i class="bi bi-calendar"></i> Start Year
+                                </label>
+                                <input type="number" class="form-control" id="startYear" 
+                                       min="1965" max="2025" placeholder="1965">
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="endYear" class="form-label">
+                                    <i class="bi bi-calendar"></i> End Year
+                                </label>
+                                <input type="number" class="form-control" id="endYear" 
+                                       min="1965" max="2025" placeholder="2025">
+                            </div>
+
+                            <!-- Min Rating -->
+                            <div class="col-md-4 mb-3">
+                                <label for="minRating" class="form-label">
+                                    <i class="bi bi-star"></i> Min Rating
+                                </label>
+                                <select class="form-select" id="minRating">
+                                    <option value="">Any Rating</option>
+                                    <option value="4.5">4.5+ stars</option>
+                                    <option value="4.0">4.0+ stars</option>
+                                    <option value="3.5">3.5+ stars</option>
+                                    <option value="3.0">3.0+ stars</option>
+                                    <option value="2.5">2.5+ stars</option>
+                                    <option value="2.0">2.0+ stars</option>
+                                </select>
+                            </div>
+
+                            <!-- Collection -->
+                            <div class="col-md-4 mb-3">
+                                <label for="collection" class="form-label">
+                                    <i class="bi bi-collection"></i> Collection
+                                </label>
+                                <input type="text" class="form-control" id="collection" list="collectionOptions" 
+                                       placeholder="Enter or select collection...">
+                                <datalist id="collectionOptions">
+                                    <option value="GratefulDead">
+                                    <option value="PhilLeshAndFriends">
+                                    <option value="BobWeir">
+                                    <option value="etree">
+                                    <option value="JerryGarcia">
+                                    <option value="DeadAndCompany">
+                                </datalist>
+                                <div class="form-text">Type to enter custom collection or select from suggestions</div>
+                            </div>
+
+                            <!-- Creator -->
+                            <div class="col-md-4 mb-3">
+                                <label for="creator" class="form-label">
+                                    <i class="bi bi-person"></i> Creator
+                                </label>
+                                <input type="text" class="form-control" id="creator" 
+                                       placeholder="e.g., Grateful Dead, Jerry Garcia...">
+                                <div class="form-text">Search by creator/artist name</div>
+                            </div>
+
+                            <!-- Search Type -->
+                            <div class="col-md-4 mb-3">
+                                <label for="searchType" class="form-label">
+                                    <i class="bi bi-layers"></i> Search Type
+                                </label>
+                                <select class="form-select" id="searchType">
+                                    <option value="hybrid">Hybrid (Local + Archive.org)</option>
+                                    <option value="local">Local Only</option>
+                                    <option value="archive">Archive.org Only</option>
+                                </select>
+                            </div>
+
+                            <!-- SBD Only -->
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">
+                                    <i class="bi bi-music-note-beamed"></i> Quality Filter
+                                </label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="sbdOnly">
+                                    <label class="form-check-label" for="sbdOnly">
+                                        Soundboard recordings only
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Search Button -->
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-search"></i> Search
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-list-ul"></i> Search Results
+                        <span id="resultsCount" class="badge bg-secondary ms-2" style="display:none;">0</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <!-- Loading spinner -->
+                    <div id="loadingSpinner" class="text-center py-4" style="display:none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Searching...</p>
+                    </div>
+
+                    <!-- No results message -->
+                    <div id="noResults" class="text-center py-5" style="display:none;">
+                        <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+                        <h4 class="text-muted mt-3">No results found</h4>
+                        <p class="text-muted">Try adjusting your search criteria</p>
+                    </div>
+
+                    <!-- Welcome message -->
+                    <div id="welcomeMessage" class="text-center py-5">
+                        <i class="bi bi-search text-primary" style="font-size: 4rem;"></i>
+                        <h4 class="text-primary mt-3">Ready to Search</h4>
+                        <p class="text-muted">Enter your search criteria above and click Search to get started</p>
+                    </div>
+
+                    <!-- Results table -->
+                    <div id="resultsTable" style="display:none;">
+                        <div class="table-responsive">
+                            <table class="table table-hover show-table">
+                                <thead>
+                                    <tr>
+                                        <th>Show</th>
+                                        <th>Date</th>
+                                        <th>Venue</th>
+                                        <th>Creator</th>
+                                        <th>Rating</th>
+                                        <th>Source</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resultsBody">
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Pagination -->
+                        <nav id="resultsPagination" aria-label="Search results pagination" style="display:none;">
+                            <ul class="pagination justify-content-center">
+                                <!-- Pagination will be inserted here -->
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Backup Modal -->
+<div class="modal fade" id="quickBackupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-cloud-download"></i> Quick Backup
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to backup this show?</p>
+                <div class="bg-light p-3 rounded">
+                    <strong id="backupShowTitle"></strong><br>
+                    <small class="text-muted" id="backupShowDetails"></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmBackup">
+                    <i class="bi bi-cloud-download"></i> Backup Metadata
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentResults = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    
+    // Form submission handler
+    document.getElementById('searchForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        performSearch();
+    });
+
+    function performSearch() {
+        const searchTerm = document.getElementById('searchTerm').value.trim();
+        const venue = document.getElementById('venue').value.trim();
+        const startYear = document.getElementById('startYear').value;
+        const endYear = document.getElementById('endYear').value;
+        const minRating = document.getElementById('minRating').value;
+        const collection = document.getElementById('collection').value.trim();
+        const creator = document.getElementById('creator').value.trim();
+        const searchType = document.getElementById('searchType').value;
+        const sbdOnly = document.getElementById('sbdOnly').checked;
+
+        // Show loading spinner
+        showLoading();
+
+        // Build search parameters
+        const params = new URLSearchParams();
+        if (searchTerm) params.append('search_term', searchTerm);
+        if (venue) params.append('venue', venue);
+        if (startYear) params.append('start_year', startYear);
+        if (endYear) params.append('end_year', endYear);
+        if (minRating) params.append('min_rating', minRating);
+        if (collection) params.append('collection', collection);
+        if (creator) params.append('creator', creator);
+        if (sbdOnly) params.append('sbd_only', 'true');
+
+        // Choose search endpoint based on type
+        let endpoint = '/api/search/';
+        if (searchType === 'hybrid') {
+            endpoint += 'hybrid';
+        } else if (searchType === 'local') {
+            endpoint += 'local';
+        } else {
+            endpoint += 'archive';
+        }
+
+        // Perform search
+        fetch(`${endpoint}?${params}`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.error) {
+                    showAlert(data.error, 'danger');
+                    showNoResults();
+                } else {
+                    displayResults(data);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('Error performing search: ' + error.message, 'danger');
+                showNoResults();
+            });
+    }
+
+    function displayResults(data) {
+        const results = data.results;
+        
+        if (!results || !results.items || results.items.length === 0) {
+            showNoResults();
+            return;
+        }
+
+        currentResults = results.items;
+        
+        // Update results count
+        const countBadge = document.getElementById('resultsCount');
+        countBadge.textContent = results.items.length;
+        countBadge.style.display = 'inline';
+
+        // Hide welcome message and show results table
+        document.getElementById('welcomeMessage').style.display = 'none';
+        document.getElementById('resultsTable').style.display = 'block';
+
+        // Populate results table
+        const tbody = document.getElementById('resultsBody');
+        tbody.innerHTML = '';
+
+        results.items.forEach(item => {
+            const row = createResultRow(item);
+            tbody.appendChild(row);
+        });
+
+        // Show additional info for hybrid search
+        if (data.local_count !== undefined) {
+            showAlert(`Found ${data.local_count} local results and ${data.archive_count} Archive.org results`, 'info');
+        }
+    }
+
+    function createResultRow(item) {
+        const row = document.createElement('tr');
+        
+        // Determine source and status
+        const isLocal = item.result_source === 'local' || item.is_backed_up;
+        const source = item.result_source || (isLocal ? 'local' : 'archive.org');
+        
+        row.innerHTML = `
+            <td>
+                <strong>${item.title || item.identifier}</strong>
+                ${item.description ? `<br><small class="text-muted">${item.description.substring(0, 100)}${item.description.length > 100 ? '...' : ''}</small>` : ''}
+            </td>
+            <td>
+                <span class="show-date">${item.date || 'N/A'}</span>
+            </td>
+            <td>${item.venue || 'N/A'}</td>
+            <td>${item.creator || 'N/A'}</td>
+            <td>
+                ${item.avg_rating ? `
+                    <span class="show-rating">
+                        ${'★'.repeat(Math.floor(item.avg_rating))}${'☆'.repeat(5 - Math.floor(item.avg_rating))}
+                    </span>
+                    <small class="text-muted">(${item.avg_rating})</small>
+                ` : 'N/A'}
+            </td>
+            <td>
+                <span class="badge ${source === 'local' ? 'bg-success' : 'bg-info'}">
+                    <i class="bi bi-${source === 'local' ? 'hdd' : 'cloud'}"></i> ${source}
+                </span>
+            </td>
+            <td>
+                ${isLocal ? `
+                    <span class="badge bg-success">
+                        <i class="bi bi-check-circle"></i> Backed Up
+                    </span>
+                ` : `
+                    <span class="badge bg-warning">
+                        <i class="bi bi-cloud"></i> Archive.org Only
+                    </span>
+                `}
+            </td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    ${isLocal ? `
+                        <a href="/show/${item.identifier}" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-eye"></i> View
+                        </a>
+                    ` : ''}
+                    <a href="https://archive.org/details/${item.identifier}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-box-arrow-up-right"></i> Archive.org
+                    </a>
+                    ${!isLocal ? `
+                        <button class="btn btn-outline-success btn-sm" onclick="showBackupModal('${item.identifier}', '${item.title || item.identifier}', '${item.date || ''}', '${item.venue || ''}')">
+                            <i class="bi bi-cloud-download"></i> Backup
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+
+        return row;
+    }
+
+    function showBackupModal(identifier, title, date, venue) {
+        document.getElementById('backupShowTitle').textContent = title;
+        document.getElementById('backupShowDetails').textContent = `${date} - ${venue}`;
+        
+        const modal = new bootstrap.Modal(document.getElementById('quickBackupModal'));
+        modal.show();
+        
+        // Set up confirm button
+        document.getElementById('confirmBackup').onclick = function() {
+            performBackup(identifier);
+            modal.hide();
+        };
+    }
+
+    function performBackup(identifier) {
+        showAlert('Starting backup...', 'info');
+
+        fetch('/api/quick_backup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                identifier: identifier
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showAlert(data.error, 'danger');
+            } else {
+                showAlert(`Successfully backed up: ${data.title}`, 'success');
+                // Refresh search results
+                performSearch();
+            }
+        })
+        .catch(error => {
+            showAlert('Error performing backup: ' + error.message, 'danger');
+        });
+    }
+
+    function showLoading() {
+        document.getElementById('loadingSpinner').style.display = 'block';
+        document.getElementById('noResults').style.display = 'none';
+        document.getElementById('welcomeMessage').style.display = 'none';
+        document.getElementById('resultsTable').style.display = 'none';
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingSpinner').style.display = 'none';
+    }
+
+    function showNoResults() {
+        document.getElementById('welcomeMessage').style.display = 'none';
+        document.getElementById('resultsTable').style.display = 'none';
+        document.getElementById('noResults').style.display = 'block';
+        document.getElementById('resultsCount').style.display = 'none';
+    }
+
+    // Auto-complete for venue field (could be enhanced with actual data)
+    document.getElementById('venue').addEventListener('input', function(e) {
+        // Could add auto-complete functionality here
+    });
+
+    // Quick search presets
+    function quickSearch(preset) {
+        switch(preset) {
+            case 'high_rated':
+                document.getElementById('minRating').value = '4.0';
+                document.getElementById('sbdOnly').checked = true;
+                break;
+            case 'recent':
+                document.getElementById('startYear').value = '2020';
+                document.getElementById('endYear').value = '2025';
+                break;
+            case 'classic':
+                document.getElementById('startYear').value = '1965';
+                document.getElementById('endYear').value = '1995';
+                break;
+        }
+        performSearch();
+    }
+
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && e.ctrlKey) {
+            performSearch();
+        }
+    });
+</script>
+{% endblock %} 
