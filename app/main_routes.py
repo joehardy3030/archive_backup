@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.models.show_metadata import ArchiveItem, db
 from app.api.archive_api import ArchiveAPI
 from sqlalchemy import desc
+from datetime import datetime
 
 main_bp = Blueprint('main', __name__)
 
@@ -202,38 +203,75 @@ def get_metadata(identifier):
 
 @main_bp.route('/api/update_ratings', methods=['POST'])
 def update_all_ratings():
-    """Update rating information for all existing backed-up shows"""
+    """Update rating, stats, and review information for all existing backed-up shows"""
     try:
+        from app.models.show_metadata import ArchiveItemStats, ArchiveItemReview
+        
         archive_api = ArchiveAPI()
         items = ArchiveItem.query.all()
         updated_count = 0
+        reviews_updated = 0
         
         for item in items:
             try:
-                # Fetch rating data from search API
-                search_results = archive_api.get_search_results(f"identifier:{item.identifier}", fields="avg_rating,num_reviews,stars")
-                if search_results and search_results.get('items'):
-                    rating_data = search_results['items'][0]
+                # Fetch fresh metadata to get current reviews
+                metadata_response = archive_api.get_metadata(item.identifier)
+                if metadata_response and metadata_response.get('metadata'):
+                    # Update reviews from metadata API
+                    reviews_data = metadata_response['metadata'].get('reviews', [])
                     
-                    # Update metadata with rating info
-                    metadata = item.metadata_dict or {}
-                    metadata['avg_rating'] = rating_data.get('avg_rating')
-                    metadata['num_reviews'] = rating_data.get('num_reviews')
-                    metadata['stars'] = rating_data.get('stars')
-                    item.metadata_dict = metadata
+                    # Clear existing reviews
+                    ArchiveItemReview.query.filter_by(archive_item_id=item.id).delete()
+                    
+                    # Add current reviews
+                    for review_data in reviews_data:
+                        review = ArchiveItemReview(
+                            archive_item_id=item.id,
+                            reviewbody=review_data.get('reviewbody'),
+                            reviewtitle=review_data.get('reviewtitle'),
+                            reviewer=review_data.get('reviewer'),
+                            reviewdate=review_data.get('reviewdate'),
+                            createdate=review_data.get('createdate'),
+                            stars=review_data.get('stars'),
+                            reviewer_itemname=review_data.get('reviewer_itemname')
+                        )
+                        db.session.add(review)
+                        reviews_updated += 1
+                
+                # Fetch stats data from search API
+                search_results = archive_api.get_search_results(f"identifier:{item.identifier}", 
+                                                              fields="avg_rating,num_reviews,stars,downloads,week,month")
+                if search_results and search_results.get('items'):
+                    search_data = search_results['items'][0]
+                    
+                    # Get or create stats record
+                    stats = ArchiveItemStats.query.filter_by(archive_item_id=item.id).first()
+                    if not stats:
+                        stats = ArchiveItemStats(archive_item_id=item.id)
+                        db.session.add(stats)
+                    
+                    # Update with search API data
+                    stats.avg_rating = search_data.get('avg_rating')
+                    stats.num_reviews = search_data.get('num_reviews')
+                    stats.stars_list = search_data.get('stars', [])
+                    stats.downloads = search_data.get('downloads')
+                    stats.downloads_week = search_data.get('week')
+                    stats.downloads_month = search_data.get('month')
+                    stats.last_updated = datetime.utcnow()
                     
                     updated_count += 1
-                    print(f"Updated ratings for {item.identifier}: {rating_data.get('avg_rating')} stars")
+                    print(f"Updated stats for {item.identifier}: {search_data.get('avg_rating')} stars, {search_data.get('downloads')} downloads")
                     
             except Exception as e:
-                print(f"Failed to update ratings for {item.identifier}: {str(e)}")
+                print(f"Failed to update stats for {item.identifier}: {str(e)}")
                 continue
         
         db.session.commit()
         
         return jsonify({
-            'message': f'Updated rating information for {updated_count} shows',
+            'message': f'Updated stats and reviews for {updated_count} shows',
             'updated_count': updated_count,
+            'reviews_updated': reviews_updated,
             'total_items': len(items)
         })
         

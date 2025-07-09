@@ -1,12 +1,62 @@
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError
-from app.models.show_metadata import db, ArchiveItem, ArchiveFile, BackupJob
+from app.models.show_metadata import db, ArchiveItem, ArchiveFile, ArchiveItemStats, ArchiveItemReview, BackupJob
 from app.api.archive_api import ArchiveAPI
 from datetime import datetime
 import json
 import os
 
 backup_bp = Blueprint('backup', __name__)
+
+def create_or_update_stats(archive_item, search_results):
+    """Create or update stats record from search API data"""
+    if not search_results or not search_results.get('items'):
+        return None
+    
+    search_data = search_results['items'][0]
+    
+    # Get or create stats record
+    stats = ArchiveItemStats.query.filter_by(archive_item_id=archive_item.id).first()
+    if not stats:
+        stats = ArchiveItemStats(archive_item_id=archive_item.id)
+        db.session.add(stats)
+    
+    # Update with search API data
+    stats.avg_rating = search_data.get('avg_rating')
+    stats.num_reviews = search_data.get('num_reviews')
+    stats.stars_list = search_data.get('stars', [])
+    stats.downloads = search_data.get('downloads')
+    stats.downloads_week = search_data.get('week')
+    stats.downloads_month = search_data.get('month')
+    stats.last_updated = datetime.utcnow()
+    
+    return stats
+
+def create_reviews_from_metadata(archive_item, metadata_response):
+    """Create review records from metadata API reviews data"""
+    reviews_data = metadata_response.get('metadata', {}).get('reviews', [])
+    if not reviews_data:
+        return []
+    
+    # Clear existing reviews to avoid duplicates
+    ArchiveItemReview.query.filter_by(archive_item_id=archive_item.id).delete()
+    
+    created_reviews = []
+    for review_data in reviews_data:
+        review = ArchiveItemReview(
+            archive_item_id=archive_item.id,
+            reviewbody=review_data.get('reviewbody'),
+            reviewtitle=review_data.get('reviewtitle'),
+            reviewer=review_data.get('reviewer'),
+            reviewdate=review_data.get('reviewdate'),
+            createdate=review_data.get('createdate'),
+            stars=review_data.get('stars'),
+            reviewer_itemname=review_data.get('reviewer_itemname')
+        )
+        db.session.add(review)
+        created_reviews.append(review)
+    
+    return created_reviews
 
 @backup_bp.route('/metadata/<identifier>', methods=['POST'])
 def backup_metadata(identifier):
@@ -15,47 +65,48 @@ def backup_metadata(identifier):
         # Initialize Archive API
         archive_api = ArchiveAPI()
         
-        # Get metadata from Archive.org
+        # Get metadata from Archive.org (clean metadata API data)
         metadata_response = archive_api.get_metadata(identifier)
         if not metadata_response:
             return jsonify({'error': 'Failed to fetch metadata from Archive.org'}), 404
-        
-        # Also fetch rating information from search API (not available in metadata API)
-        try:
-            search_results = archive_api.get_search_results(f"identifier:{identifier}", fields="avg_rating,num_reviews,stars")
-            if search_results and search_results.get('items'):
-                rating_data = search_results['items'][0]
-                # Add rating data to metadata
-                metadata_response['metadata']['avg_rating'] = rating_data.get('avg_rating')
-                metadata_response['metadata']['num_reviews'] = rating_data.get('num_reviews') 
-                metadata_response['metadata']['stars'] = rating_data.get('stars')
-        except Exception as e:
-            # Continue without ratings - not critical
-            pass
         
         # Check if metadata already exists
         existing_metadata = ArchiveItem.query.filter_by(identifier=identifier).first()
         
         if existing_metadata:
-            # Update existing metadata
+            # Update existing metadata (metadata API data only)
             update_metadata_from_response(existing_metadata, metadata_response)
-            db.session.commit()
-            return jsonify({
-                'message': 'Metadata updated successfully',
-                'identifier': identifier,
-                'action': 'updated'
-            })
+            archive_item = existing_metadata
         else:
-            # Create new metadata
-            show_metadata = create_metadata_from_response(metadata_response)
-            db.session.add(show_metadata)
-            db.session.commit()
-            
-            return jsonify({
-                'message': 'Metadata backed up successfully',
-                'identifier': identifier,
-                'action': 'created'
-            })
+            # Create new metadata (metadata API data only)
+            archive_item = create_metadata_from_response(metadata_response)
+            db.session.add(archive_item)
+        
+        # Commit metadata first
+        db.session.commit()
+        
+        # Extract and store reviews from metadata (part of metadata API)
+        reviews = create_reviews_from_metadata(archive_item, metadata_response)
+        
+        # Separately fetch and store stats/rating data from search API
+        try:
+            search_results = archive_api.get_search_results(f"identifier:{identifier}", 
+                                                          fields="avg_rating,num_reviews,stars,downloads,week,month")
+            create_or_update_stats(archive_item, search_results)
+        except Exception as e:
+            print(f"Warning: Could not fetch stats data: {str(e)}")
+            # Continue without stats - not critical for metadata backup
+        
+        db.session.commit()
+        
+        action = 'updated' if existing_metadata else 'created'
+        return jsonify({
+            'message': f'Metadata {action} successfully',
+            'identifier': identifier,
+            'action': action,
+            'has_stats': archive_item.stats is not None,
+            'reviews_count': len(reviews)
+        })
     
     except IntegrityError as e:
         db.session.rollback()
@@ -159,21 +210,6 @@ def backup_full(identifier):
         
         print(f"[DEBUG] Metadata fetched successfully")
         
-        # Also fetch rating information from search API (not available in metadata API)
-        print(f"[DEBUG] Fetching rating data from search API")
-        try:
-            search_results = archive_api.get_search_results(f"identifier:{identifier}", fields="avg_rating,num_reviews,stars")
-            if search_results and search_results.get('items'):
-                rating_data = search_results['items'][0]
-                # Add rating data to metadata
-                metadata_response['metadata']['avg_rating'] = rating_data.get('avg_rating')
-                metadata_response['metadata']['num_reviews'] = rating_data.get('num_reviews') 
-                metadata_response['metadata']['stars'] = rating_data.get('stars')
-                print(f"[DEBUG] Rating data added: {rating_data.get('avg_rating')} stars, {rating_data.get('num_reviews')} reviews")
-        except Exception as e:
-            print(f"[DEBUG] Could not fetch rating data: {str(e)}")
-            # Continue without ratings - not critical
-        
         # Check if metadata already exists
         existing_metadata = ArchiveItem.query.filter_by(identifier=identifier).first()
         
@@ -200,6 +236,24 @@ def backup_full(identifier):
         db.session.commit()
         print(f"[DEBUG] Metadata committed successfully")
         
+        # Extract and store reviews from metadata (part of metadata API)
+        print(f"[DEBUG] Extracting reviews from metadata")
+        reviews = create_reviews_from_metadata(archive_item, metadata_response)
+        print(f"[DEBUG] Found {len(reviews)} reviews")
+        
+        # Separately fetch and store stats/rating data from search API
+        print(f"[DEBUG] Fetching stats data from search API")
+        try:
+            search_results = archive_api.get_search_results(f"identifier:{identifier}", 
+                                                          fields="avg_rating,num_reviews,stars,downloads,week,month")
+            stats = create_or_update_stats(archive_item, search_results)
+            if stats:
+                print(f"[DEBUG] Stats updated: {stats.avg_rating} stars, {stats.num_reviews} reviews, {stats.downloads} downloads")
+            db.session.commit()
+        except Exception as e:
+            print(f"[DEBUG] Could not fetch stats data: {str(e)}")
+            # Continue without stats - not critical
+
         # Now backup files
         files = metadata_response.get('files', [])
         downloaded_files = []
@@ -268,6 +322,7 @@ def backup_full(identifier):
             'total_downloaded': len(downloaded_files),
             'total_failed': len(failed_files),
             'total_files': total_files,
+            'reviews_count': len(reviews),
             'storage_location': f'storage/files/{identifier}/'
         })
         

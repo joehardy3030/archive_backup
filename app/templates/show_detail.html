@@ -146,6 +146,50 @@
 
                 <!-- Files Panel -->
                 <div class="col-md-8">
+                    <!-- Reviews Section -->
+                    {% if item.reviews %}
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-comments"></i> Reviews ({{ item.reviews|length }})
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            {% for review in item.reviews %}
+                                <div class="review-item border-bottom pb-3 mb-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="mb-1">{{ review.reviewtitle or 'Untitled Review' }}</h6>
+                                            <small class="text-muted">
+                                                by <strong>{{ review.reviewer }}</strong>
+                                                {% if review.reviewdate %}
+                                                    on {{ review.reviewdate }}
+                                                {% endif %}
+                                            </small>
+                                        </div>
+                                        {% if review.stars %}
+                                            <div class="review-stars">
+                                                {% for i in range(1, 6) %}
+                                                    {% if i <= review.stars_int %}
+                                                        <i class="fas fa-star text-warning"></i>
+                                                    {% else %}
+                                                        <i class="far fa-star text-muted"></i>
+                                                    {% endif %}
+                                                {% endfor %}
+                                                <small class="text-muted ms-1">({{ review.stars }})</small>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="review-body">
+                                        {{ review.reviewbody|replace('\n', '<br>')|safe }}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Files Section -->
                     <div class="card">
                         <div class="card-header">
                             <h5 class="card-title mb-0">

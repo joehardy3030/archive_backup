@@ -39,6 +39,8 @@ class ArchiveItem(db.Model):
     
     # Relationships
     files = relationship("ArchiveFile", back_populates="archive_item", cascade="all, delete-orphan")
+    stats = relationship("ArchiveItemStats", back_populates="archive_item", uselist=False)
+    reviews = relationship("ArchiveItemReview", back_populates="archive_item", cascade="all, delete-orphan")
     
     def __init__(self, identifier: str, **kwargs):
         self.identifier = identifier
@@ -121,25 +123,18 @@ class ArchiveItem(db.Model):
     
     @property
     def avg_rating(self) -> Optional[float]:
-        metadata = self.metadata_dict
-        rating = metadata.get('avg_rating')
-        if rating:
-            try:
-                return float(rating)
-            except (ValueError, TypeError):
-                return None
-        return None
-    
+        """Get average rating from stats table (search API data)"""
+        return self.stats.avg_rating if self.stats else None
+
     @property
     def num_reviews(self) -> Optional[int]:
-        metadata = self.metadata_dict
-        reviews = metadata.get('num_reviews')
-        if reviews:
-            try:
-                return int(reviews)
-            except (ValueError, TypeError):
-                return None
-        return None
+        """Get number of reviews from stats table (search API data)"""
+        return self.stats.num_reviews if self.stats else None
+    
+    @property
+    def downloads(self) -> Optional[int]:
+        """Get download count from stats table (search API data)"""
+        return self.stats.downloads if self.stats else None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization (Archive.org format)"""
@@ -248,6 +243,116 @@ class ArchiveFile(db.Model):
         result['download_date'] = self.download_date.isoformat() if self.download_date else None
         
         return result
+
+class ArchiveItemStats(db.Model):
+    """Archive.org item statistics and community data from search API"""
+    __tablename__ = 'archive_item_stats'
+    
+    id = Column(Integer, primary_key=True)
+    archive_item_id = Column(Integer, ForeignKey('archive_items.id'), nullable=False)
+    
+    # Rating/Review data from search API
+    avg_rating = Column(Float)  # Average star rating (0.0 - 5.0)
+    num_reviews = Column(Integer)  # Number of reviews
+    stars_json = Column(Text)  # JSON array of individual star ratings [5,4,3,etc]
+    
+    # Usage statistics from search API
+    downloads = Column(Integer)  # Total download count
+    downloads_week = Column(Integer)  # Downloads this week
+    downloads_month = Column(Integer)  # Downloads this month
+    
+    # Timestamps
+    last_updated = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    archive_item = relationship("ArchiveItem", back_populates="stats")
+    
+    @property
+    def stars_list(self) -> Optional[List[int]]:
+        """Get individual star ratings as list"""
+        if self.stars_json:
+            try:
+                return json.loads(self.stars_json)
+            except json.JSONDecodeError:
+                return []
+        return []
+    
+    @stars_list.setter
+    def stars_list(self, value: Optional[List[int]]):
+        """Set individual star ratings from list"""
+        if value:
+            self.stars_json = json.dumps(value)
+        else:
+            self.stars_json = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            'avg_rating': self.avg_rating,
+            'num_reviews': self.num_reviews,
+            'stars': self.stars_list,
+            'downloads': self.downloads,
+            'downloads_week': self.downloads_week,
+            'downloads_month': self.downloads_month,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None
+        }
+
+class ArchiveItemReview(db.Model):
+    """Archive.org item reviews from metadata API"""
+    __tablename__ = 'archive_item_reviews'
+    
+    id = Column(Integer, primary_key=True)
+    archive_item_id = Column(Integer, ForeignKey('archive_items.id'), nullable=False)
+    
+    # Review content from metadata API
+    reviewbody = Column(Text)  # The actual review text
+    reviewtitle = Column(String(500))  # Title of the review
+    reviewer = Column(String(255))  # Username of the reviewer
+    reviewdate = Column(String(50))  # When review was posted (Archive.org format)
+    createdate = Column(String(50))  # When review was created (Archive.org format)
+    stars = Column(String(10))  # Star rating as string (Archive.org format)
+    
+    # Additional fields that might be in some reviews
+    reviewer_itemname = Column(String(255))  # Full reviewer identifier
+    
+    # Our internal tracking
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    archive_item = relationship("ArchiveItem", back_populates="reviews")
+    
+    @property
+    def stars_int(self) -> Optional[int]:
+        """Get star rating as integer"""
+        if self.stars:
+            try:
+                return int(self.stars)
+            except (ValueError, TypeError):
+                return None
+        return None
+    
+    @property
+    def reviewdate_datetime(self) -> Optional[datetime]:
+        """Convert Archive.org date string to datetime"""
+        if self.reviewdate:
+            try:
+                # Archive.org format: "2012-01-08 01:43:50"
+                return datetime.strptime(self.reviewdate, "%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                return None
+        return None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization (Archive.org format)"""
+        return {
+            'reviewbody': self.reviewbody,
+            'reviewtitle': self.reviewtitle,
+            'reviewer': self.reviewer,
+            'reviewdate': self.reviewdate,
+            'createdate': self.createdate,
+            'stars': self.stars,
+            'reviewer_itemname': self.reviewer_itemname
+        }
 
 class BackupJob(db.Model):
     __tablename__ = 'backup_jobs'
