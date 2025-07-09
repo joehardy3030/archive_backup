@@ -90,8 +90,8 @@ def backup_metadata(identifier):
         
         # Separately fetch and store stats/rating data from search API
         try:
-            search_results = archive_api.get_search_results(f"identifier:{identifier}", 
-                                                          fields="avg_rating,num_reviews,stars,downloads,week,month")
+            search_url = f"{archive_api.base_url}services/search/v1/scrape?fields=avg_rating,num_reviews,stars,downloads,week,month&q=identifier:{identifier}"
+            search_results = archive_api.get_search_results(search_url)
             create_or_update_stats(archive_item, search_results)
         except Exception as e:
             print(f"Warning: Could not fetch stats data: {str(e)}")
@@ -244,8 +244,8 @@ def backup_full(identifier):
         # Separately fetch and store stats/rating data from search API
         print(f"[DEBUG] Fetching stats data from search API")
         try:
-            search_results = archive_api.get_search_results(f"identifier:{identifier}", 
-                                                          fields="avg_rating,num_reviews,stars,downloads,week,month")
+            search_url = f"{archive_api.base_url}services/search/v1/scrape?fields=avg_rating,num_reviews,stars,downloads,week,month&q=identifier:{identifier}"
+            search_results = archive_api.get_search_results(search_url)
             stats = create_or_update_stats(archive_item, search_results)
             if stats:
                 print(f"[DEBUG] Stats updated: {stats.avg_rating} stars, {stats.num_reviews} reviews, {stats.downloads} downloads")

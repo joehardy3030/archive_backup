@@ -112,6 +112,14 @@ class ArchiveItem(db.Model):
         return metadata.get('venue')
     
     @property
+    def description(self) -> Optional[str]:
+        metadata = self.metadata_dict
+        description = metadata.get('description')
+        if isinstance(description, list):
+            return description[0] if description else None
+        return description
+    
+    @property
     def collection(self) -> Optional[List[str]]:
         metadata = self.metadata_dict
         collection = metadata.get('collection')

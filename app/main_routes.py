@@ -186,16 +186,71 @@ def quick_backup():
 
 @main_bp.route('/api/metadata/<identifier>')
 def get_metadata(identifier):
-    """Get metadata for a specific identifier"""
+    """Get metadata for a specific identifier - checks local first, then Archive.org"""
     try:
-        # Initialize Archive API
-        archive_api = ArchiveAPI()
+        # Check if we have local metadata first
+        local_item = ArchiveItem.query.filter_by(identifier=identifier).first()
         
-        # Get metadata from Archive.org
+        if local_item:
+            # Return local metadata in the same format as Archive.org API
+            metadata_dict = local_item.metadata_dict or {}
+            
+            # Add stats data to metadata if available
+            if local_item.stats:
+                metadata_dict['avg_rating'] = local_item.stats.avg_rating
+                metadata_dict['num_reviews'] = local_item.stats.num_reviews
+                metadata_dict['downloads'] = local_item.stats.downloads
+                metadata_dict['downloads_week'] = local_item.stats.downloads_week
+                metadata_dict['downloads_month'] = local_item.stats.downloads_month
+            
+            local_metadata = {
+                'metadata': metadata_dict,
+                'created': local_item.created,
+                'd1': local_item.d1,
+                'd2': local_item.d2,
+                'dir': local_item.dir,
+                'files_count': local_item.files_count,
+                'item_last_updated': local_item.item_last_updated,
+                'item_size': local_item.item_size,
+                'server': local_item.server,
+                'uniq': local_item.uniq,
+                'workable_servers': local_item.workable_servers_list,
+                'files': [file.to_dict() for file in local_item.files]
+            }
+            
+            # Add local-specific fields
+            local_metadata['is_local'] = True
+            local_metadata['backup_date'] = local_item.backup_date.isoformat() if local_item.backup_date else None
+            local_metadata['is_backed_up'] = local_item.is_backed_up
+            
+            return jsonify(local_metadata)
+        
+        # If not found locally, fetch from Archive.org
+        archive_api = ArchiveAPI()
         metadata_response = archive_api.get_metadata(identifier)
         if not metadata_response:
             return jsonify({'error': 'Failed to fetch metadata from Archive.org'}), 404
         
+        # Also fetch ratings from search API for Archive.org items
+        try:
+            search_url = f"{archive_api.base_url}services/search/v1/scrape?fields=avg_rating,num_reviews,stars,downloads,week,month&q=identifier:{identifier}"
+            search_results = archive_api.get_search_results(search_url)
+            
+            if search_results and search_results.get('items') and len(search_results['items']) > 0:
+                search_data = search_results['items'][0]
+                # Add ratings to metadata
+                if not metadata_response.get('metadata'):
+                    metadata_response['metadata'] = {}
+                metadata_response['metadata']['avg_rating'] = search_data.get('avg_rating')
+                metadata_response['metadata']['num_reviews'] = search_data.get('num_reviews')
+                metadata_response['metadata']['downloads'] = search_data.get('downloads')
+                print(f"Added ratings to metadata: {search_data.get('avg_rating')} stars, {search_data.get('num_reviews')} reviews")
+        except Exception as e:
+            print(f"Warning: Could not fetch ratings for {identifier}: {str(e)}")
+            # Continue without ratings - not critical
+        
+        # Mark as not local
+        metadata_response['is_local'] = False
         return jsonify(metadata_response)
         
     except Exception as e:
@@ -239,8 +294,8 @@ def update_all_ratings():
                         reviews_updated += 1
                 
                 # Fetch stats data from search API
-                search_results = archive_api.get_search_results(f"identifier:{item.identifier}", 
-                                                              fields="avg_rating,num_reviews,stars,downloads,week,month")
+                search_url = f"{archive_api.base_url}services/search/v1/scrape?fields=avg_rating,num_reviews,stars,downloads,week,month&q=identifier:{item.identifier}"
+                search_results = archive_api.get_search_results(search_url)
                 if search_results and search_results.get('items'):
                     search_data = search_results['items'][0]
                     

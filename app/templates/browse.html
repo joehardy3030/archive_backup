@@ -2,6 +2,66 @@
 
 {% block title %}Browse Shows - Archive Backup{% endblock %}
 
+{% block head %}
+<style>
+    .metadata-row {
+        background-color: #f8f9fa;
+    }
+    
+    .metadata-container {
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .metadata-row .card {
+        margin-bottom: 0;
+        border: 1px solid #dee2e6;
+        background-color: #ffffff;
+    }
+    
+    .metadata-row .card-title {
+        color: #007bff;
+        font-weight: bold;
+    }
+    
+    .metadata-row .table-borderless td {
+        padding: 0.25rem 0.5rem;
+        vertical-align: top;
+    }
+    
+    .metadata-row .table-borderless td:first-child {
+        width: 120px;
+        color: #6c757d;
+    }
+    
+    .toggle-btn {
+        transition: transform 0.2s ease;
+    }
+    
+    .toggle-btn:hover {
+        transform: scale(1.1);
+    }
+    
+    .description-content {
+        font-family: inherit;
+    }
+    
+    .description-content .b1 {
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .description-content .set {
+        margin-bottom: 0.5rem;
+    }
+    
+    .description-content .set_info {
+        margin-left: 1rem;
+        line-height: 1.4;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <!-- Header -->
@@ -53,16 +113,10 @@
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-md-2 mb-3">
-                                <label class="form-label">&nbsp;</label>
-                                <div class="d-grid gap-2">
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="bi bi-search"></i> Search
-                                    </button>
-                                    <a href="{{ url_for('main.browse') }}" class="btn btn-outline-secondary">
-                                        <i class="bi bi-x-circle"></i> Clear
-                                    </a>
-                                </div>
+                            <div class="col-md-2 mb-3 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-search"></i> Search
+                                </button>
                             </div>
                         </div>
                     </form>
@@ -96,6 +150,7 @@
                             <table class="table table-hover show-table">
                                 <thead>
                                     <tr>
+                                        <th width="40px"></th>
                                         <th>Show</th>
                                         <th>Date</th>
                                         <th>Venue</th>
@@ -109,9 +164,17 @@
                                     {% for item in items %}
                                     <tr>
                                         <td>
+                                            <button class="btn btn-sm btn-outline-secondary toggle-btn" 
+                                                    onclick="toggleMetadata('{{ item.identifier }}')" 
+                                                    id="toggle-{{ item.identifier }}" 
+                                                    title="Show/Hide Metadata">
+                                                <i class="bi bi-chevron-right"></i>
+                                            </button>
+                                        </td>
+                                        <td>
                                             <strong>{{ item.title or item.identifier }}</strong>
                                             {% if item.description %}
-                                                <br><small class="text-muted">{{ item.description[:100] }}{% if item.description|length > 100 %}...{% endif %}</small>
+                                                <br><small class="text-muted">{{ (item.description | striptags)[:100] }}{% if (item.description | striptags)|length > 100 %}...{% endif %}</small>
                                             {% endif %}
                                         </td>
                                         <td>
@@ -148,6 +211,19 @@
                                             </div>
                                         </td>
                                     </tr>
+                                    <!-- Metadata row (initially hidden) -->
+                                    <tr id="metadata-{{ item.identifier }}" style="display: none;" class="metadata-row">
+                                        <td colspan="8">
+                                            <div class="metadata-container bg-light p-3 rounded" id="container-{{ item.identifier }}">
+                                                <div class="text-center mb-3">
+                                                    <div class="spinner-border text-primary" role="status">
+                                                        <span class="visually-hidden">Loading...</span>
+                                                    </div>
+                                                    <p class="mt-2">Loading full metadata...</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -180,7 +256,7 @@
                                             {% endif %}
                                         {% else %}
                                             <li class="page-item disabled">
-                                                <span class="page-link">...</span>
+                                                <span class="page-link">…</span>
                                             </li>
                                         {% endif %}
                                     {% endfor %}
@@ -195,7 +271,6 @@
                                 </ul>
                             </nav>
                         {% endif %}
-
                     {% else %}
                         <div class="text-center py-5">
                             <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
@@ -224,16 +299,201 @@
 <script>
     // Auto-submit search form on enter
     document.addEventListener('DOMContentLoaded', function() {
-        const searchForm = document.querySelector('form');
         const searchInput = document.getElementById('search_term');
         
         if (searchInput) {
             searchInput.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
-                    searchForm.submit();
+                    document.querySelector('form').submit();
                 }
             });
         }
     });
+
+    // Toggle metadata display
+    window.toggleMetadata = function(identifier) {
+        const metadataRow = document.getElementById(`metadata-${identifier}`);
+        const toggleBtn = document.getElementById(`toggle-${identifier}`);
+        const icon = toggleBtn.querySelector('i');
+        
+        if (metadataRow.style.display === 'none') {
+            metadataRow.style.display = 'table-row';
+            icon.className = 'bi bi-chevron-down';
+            
+            // Check if metadata is already loaded
+            const container = document.getElementById(`container-${identifier}`);
+            if (container && container.innerHTML.includes('Loading full metadata')) {
+                // Fetch and display full metadata immediately
+                fetchAndDisplayMetadata(identifier);
+            }
+        } else {
+            metadataRow.style.display = 'none';
+            icon.className = 'bi bi-chevron-right';
+        }
+    }
+
+    // Fetch and display full metadata
+    function fetchAndDisplayMetadata(identifier) {
+        fetch(`/api/metadata/${identifier}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    displayErrorMetadata(identifier);
+                } else {
+                    displayFullMetadata(identifier, data);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading metadata:', error);
+                displayErrorMetadata(identifier);
+            });
+    }
+
+    // Display full metadata with all fields
+    function displayFullMetadata(identifier, fullData) {
+        const container = document.getElementById(`container-${identifier}`);
+        if (!container) return;
+        
+        const metadata = fullData.metadata || {};
+        
+        // Helper function to format arrays
+        function formatArray(arr) {
+            if (!arr) return 'N/A';
+            if (Array.isArray(arr)) {
+                return arr.length > 0 ? arr.join(', ') : 'N/A';
+            }
+            return arr;
+        }
+        
+        // Helper function to format timestamp
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            return new Date(timestamp * 1000).toLocaleString();
+        }
+        
+        // Helper function to safely render HTML description
+        function formatDescription(description) {
+            if (!description) return '';
+            // Create a temporary div to properly decode and clean the HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = description;
+            return tempDiv.innerHTML;
+        }
+        
+        container.innerHTML = `
+            <h6 class="text-primary mb-3">Complete Metadata for ${identifier}</h6>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-sm table-striped">
+                        <tbody>
+                            <tr><td><strong>Identifier:</strong></td><td>${metadata.identifier || 'N/A'}</td></tr>
+                            <tr><td><strong>Title:</strong></td><td>${metadata.title || 'N/A'}</td></tr>
+                            <tr><td><strong>Creator:</strong></td><td>${metadata.creator || 'N/A'}</td></tr>
+                            <tr><td><strong>Date:</strong></td><td>${metadata.date || 'N/A'}</td></tr>
+                            <tr><td><strong>Year:</strong></td><td>${metadata.year || 'N/A'}</td></tr>
+                            <tr><td><strong>Venue:</strong></td><td>${metadata.venue || 'N/A'}</td></tr>
+                            <tr><td><strong>Media Type:</strong></td><td>${metadata.mediatype || 'N/A'}</td></tr>
+                            <tr><td><strong>Type:</strong></td><td>${metadata.type || 'N/A'}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-sm table-striped">
+                        <tbody>
+                            <tr><td><strong>Collection:</strong></td><td>${formatArray(metadata.collection)}</td></tr>
+                            <tr><td><strong>Source:</strong></td><td>${formatArray(metadata.source)}</td></tr>
+                            <tr><td><strong>Transferer:</strong></td><td>${metadata.transferer || 'N/A'}</td></tr>
+                            <tr><td><strong>Coverage:</strong></td><td>${metadata.coverage || 'N/A'}</td></tr>
+                            <tr><td><strong>Average Rating:</strong></td><td>${metadata.avg_rating || 'N/A'}</td></tr>
+                            <tr><td><strong>Number of Reviews:</strong></td><td>${metadata.num_reviews || 'N/A'}</td></tr>
+                            <tr><td><strong>Files Count:</strong></td><td>${fullData.files_count || 'N/A'}</td></tr>
+                            <tr><td><strong>Item Size:</strong></td><td>${fullData.item_size ? formatFileSize(fullData.item_size) : 'N/A'}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            ${metadata.description ? `
+                <div class="mt-3">
+                    <h6 class="text-primary">Description:</h6>
+                    <div class="bg-white p-3 rounded border description-content">
+                        ${formatDescription(metadata.description)}
+                    </div>
+                </div>
+            ` : ''}
+            
+            ${fullData.files && fullData.files.length > 0 ? `
+                <div class="mt-3">
+                    <h6 class="text-primary">Files (${fullData.files.length}):</h6>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Size</th>
+                                    <th>Format</th>
+                                    <th>Length</th>
+                                    <th>Downloaded</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${fullData.files.map(file => `
+                                    <tr>
+                                        <td>${file.name || 'N/A'}</td>
+                                        <td>${file.size ? formatFileSize(parseInt(file.size)) : 'N/A'}</td>
+                                        <td>${file.format || 'N/A'}</td>
+                                        <td>${file.length || 'N/A'}</td>
+                                        <td>
+                                            ${file.is_downloaded ? 
+                                                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Downloaded</span>' : 
+                                                '<span class="badge bg-secondary">Not Downloaded</span>'
+                                            }
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="mt-3 text-center">
+                <a href="/show/${identifier}" class="btn btn-primary">
+                    <i class="bi bi-eye"></i> Full Detail View
+                </a>
+                <a href="https://archive.org/details/${identifier}" target="_blank" class="btn btn-outline-secondary ms-2">
+                    <i class="bi bi-box-arrow-up-right"></i> View on Archive.org
+                </a>
+            </div>
+        `;
+    }
+
+    // Display error state
+    function displayErrorMetadata(identifier) {
+        const container = document.getElementById(`container-${identifier}`);
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="text-center text-danger">
+                <i class="bi bi-exclamation-triangle" style="font-size: 2rem;"></i>
+                <p class="mt-2">Failed to load metadata for ${identifier}</p>
+                <button class="btn btn-outline-primary btn-sm" onclick="fetchAndDisplayMetadata('${identifier}')">
+                    <i class="bi bi-arrow-clockwise"></i> Retry
+                </button>
+            </div>
+        `;
+    }
+
+    // Helper function to format file sizes
+    function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return 'N/A';
+        
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        
+        if (i === 0) return bytes + ' ' + sizes[i];
+        return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+    }
 </script>
 {% endblock %} 
