@@ -86,3 +86,6 @@ __old__/
 venv/
 env/
 .env/
+
+# Files
+storage/

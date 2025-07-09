@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.title or item.identifier }} - Archive Backup{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1>{{ item.title or item.identifier }}</h1>
+                    <p class="text-muted mb-0">{{ item.creator or 'Unknown Creator' }} • {{ item.date or 'Unknown Date' }}</p>
+                </div>
+                <div>
+                    <a href="{{ url_for('main.browse') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Browse
+                    </a>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="row">
+                <!-- Metadata Panel -->
+                <div class="col-md-4">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-info-circle"></i> Show Information
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-borderless table-sm">
+                                <tr>
+                                    <td><strong>Title:</strong></td>
+                                    <td>{{ item.title or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Creator:</strong></td>
+                                    <td>{{ item.creator or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Date:</strong></td>
+                                    <td>{{ item.date or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Venue:</strong></td>
+                                    <td>{{ item.venue or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Collection:</strong></td>
+                                    <td>
+                                        {% if item.collection %}
+                                            {% for col in item.collection %}
+                                                <span class="badge badge-secondary">{{ col }}</span>
+                                            {% endfor %}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Rating:</strong></td>
+                                    <td>
+                                        {% if item.avg_rating %}
+                                            <span class="badge badge-warning">{{ "%.1f"|format(item.avg_rating) }} ★</span>
+                                            {% if item.num_reviews %}
+                                                <small class="text-muted">({{ item.num_reviews }} reviews)</small>
+                                            {% endif %}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Item Size:</strong></td>
+                                    <td>
+                                        {% if item.item_size %}
+                                            {{ "%.1f"|format(item.item_size / 1024 / 1024) }} MB
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Files:</strong></td>
+                                    <td>{{ total_files }} total</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Backup Status -->
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-download"></i> Backup Status
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between">
+                                    <span>Downloaded Files:</span>
+                                    <span><strong>{{ downloaded_files|length }}/{{ total_files }}</strong></span>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-bar" style="width: {{ progress_percent }}%"></div>
+                                </div>
+                            </div>
+                            
+                            {% if item.is_backed_up %}
+                                <div class="alert alert-success">
+                                    <i class="fas fa-check-circle"></i> Fully Backed Up
+                                    {% if item.backup_date %}
+                                        <br><small>{{ item.backup_date.strftime('%Y-%m-%d %H:%M') }}</small>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> Partial Backup
+                                </div>
+                            {% endif %}
+                            
+                            <div class="btn-group-vertical w-100">
+                                <button class="btn btn-primary" onclick="backupMetadata('{{ item.identifier }}')">
+                                    <i class="fas fa-database"></i> Update Metadata
+                                </button>
+                                <button class="btn btn-success" onclick="backupFull('{{ item.identifier }}')">
+                                    <i class="fas fa-download"></i> Full Backup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Archive.org Link -->
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <a href="https://archive.org/details/{{ item.identifier }}" 
+                               target="_blank" 
+                               class="btn btn-outline-primary">
+                                <i class="fas fa-external-link-alt"></i> View on Archive.org
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Files Panel -->
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-file-audio"></i> Files
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            {% if item.files %}
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Format</th>
+                                                <th>Size</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for file in item.files %}
+                                                <tr>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            {% if file.format and 'mp3' in file.format.lower() %}
+                                                                <i class="fas fa-music text-primary me-2"></i>
+                                                            {% elif file.format and 'flac' in file.format.lower() %}
+                                                                <i class="fas fa-music text-success me-2"></i>
+                                                            {% elif file.format and 'txt' in file.format.lower() %}
+                                                                <i class="fas fa-file-text text-secondary me-2"></i>
+                                                            {% else %}
+                                                                <i class="fas fa-file text-muted me-2"></i>
+                                                            {% endif %}
+                                                            <div>
+                                                                <div class="fw-bold">{{ file.name }}</div>
+                                                                {% if file.title %}
+                                                                    <small class="text-muted">{{ file.title }}</small>
+                                                                {% endif %}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        {% if file.format %}
+                                                            <span class="badge badge-info">{{ file.format }}</span>
+                                                        {% else %}
+                                                            <span class="text-muted">Unknown</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% if file.size %}
+                                                            {{ "%.1f"|format(file.size|int / 1024 / 1024) }} MB
+                                                        {% else %}
+                                                            <span class="text-muted">Unknown</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% if file.is_downloaded %}
+                                                            <span class="badge badge-success">
+                                                                <i class="fas fa-check"></i> Downloaded
+                                                            </span>
+                                                        {% else %}
+                                                            <span class="badge badge-secondary">
+                                                                <i class="fas fa-cloud"></i> Online Only
+                                                            </span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <div class="btn-group btn-group-sm">
+                                                            {% if file.is_downloaded and file.local_path %}
+                                                                <button class="btn btn-outline-primary" 
+                                                                        onclick="playFile('{{ file.local_path }}')">
+                                                                    <i class="fas fa-play"></i>
+                                                                </button>
+                                                            {% endif %}
+                                                            <a href="https://archive.org/download/{{ item.identifier }}/{{ file.name }}" 
+                                                               target="_blank" 
+                                                               class="btn btn-outline-secondary">
+                                                                <i class="fas fa-external-link-alt"></i>
+                                                            </a>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="text-center text-muted py-4">
+                                    <i class="fas fa-file-audio fa-3x mb-3"></i>
+                                    <p>No files found for this show.</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Backup Progress</h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div id="progressStatus">Starting backup...</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showProgress(message) {
+    document.getElementById('progressStatus').textContent = message;
+    new bootstrap.Modal(document.getElementById('progressModal')).show();
+}
+
+function hideProgress() {
+    bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
+}
+
+function backupMetadata(identifier) {
+    showProgress('Backing up metadata...');
+    
+    fetch(`/api/backup/metadata/${identifier}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            alert('Metadata backup completed successfully!');
+            location.reload();
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('Error: ' + error.message);
+    });
+}
+
+function backupFull(identifier) {
+    showProgress('Starting full backup... This may take several minutes.');
+    
+    fetch(`/api/backup/full/${identifier}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideProgress();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            const message = `Full backup completed!\n\n` +
+                          `Downloaded: ${data.total_downloaded} files\n` +
+                          `Failed: ${data.total_failed} files\n` +
+                          `Storage: ${data.storage_location}`;
+            alert(message);
+            location.reload();
+        }
+    })
+    .catch(error => {
+        hideProgress();
+        alert('Error: ' + error.message);
+    });
+}
+
+function playFile(filePath) {
+    alert('Audio playback not yet implemented.\n\nFile location: ' + filePath);
+    // TODO: Implement audio playback functionality
+}
+</script>
+{% endblock %} 

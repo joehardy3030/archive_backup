@@ -47,10 +47,14 @@ def show_detail(identifier):
         downloaded_files = [f for f in item.files if f.is_downloaded]
         total_files = len(item.files)
         
+        # Calculate progress percentage
+        progress_percent = (len(downloaded_files) / total_files * 100) if total_files > 0 else 0
+        
         return render_template('show_detail.html',
                              item=item,
                              downloaded_files=downloaded_files,
-                             total_files=total_files)
+                             total_files=total_files,
+                             progress_percent=progress_percent)
     except Exception as e:
         flash(f'Error loading show: {str(e)}', 'error')
         return redirect(url_for('main.index'))
@@ -194,6 +198,47 @@ def get_metadata(identifier):
         return jsonify(metadata_response)
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main_bp.route('/api/update_ratings', methods=['POST'])
+def update_all_ratings():
+    """Update rating information for all existing backed-up shows"""
+    try:
+        archive_api = ArchiveAPI()
+        items = ArchiveItem.query.all()
+        updated_count = 0
+        
+        for item in items:
+            try:
+                # Fetch rating data from search API
+                search_results = archive_api.get_search_results(f"identifier:{item.identifier}", fields="avg_rating,num_reviews,stars")
+                if search_results and search_results.get('items'):
+                    rating_data = search_results['items'][0]
+                    
+                    # Update metadata with rating info
+                    metadata = item.metadata_dict or {}
+                    metadata['avg_rating'] = rating_data.get('avg_rating')
+                    metadata['num_reviews'] = rating_data.get('num_reviews')
+                    metadata['stars'] = rating_data.get('stars')
+                    item.metadata_dict = metadata
+                    
+                    updated_count += 1
+                    print(f"Updated ratings for {item.identifier}: {rating_data.get('avg_rating')} stars")
+                    
+            except Exception as e:
+                print(f"Failed to update ratings for {item.identifier}: {str(e)}")
+                continue
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Updated rating information for {updated_count} shows',
+            'updated_count': updated_count,
+            'total_items': len(items)
+        })
+        
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/health')

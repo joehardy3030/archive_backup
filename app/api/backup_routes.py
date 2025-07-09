@@ -20,6 +20,19 @@ def backup_metadata(identifier):
         if not metadata_response:
             return jsonify({'error': 'Failed to fetch metadata from Archive.org'}), 404
         
+        # Also fetch rating information from search API (not available in metadata API)
+        try:
+            search_results = archive_api.get_search_results(f"identifier:{identifier}", fields="avg_rating,num_reviews,stars")
+            if search_results and search_results.get('items'):
+                rating_data = search_results['items'][0]
+                # Add rating data to metadata
+                metadata_response['metadata']['avg_rating'] = rating_data.get('avg_rating')
+                metadata_response['metadata']['num_reviews'] = rating_data.get('num_reviews') 
+                metadata_response['metadata']['stars'] = rating_data.get('stars')
+        except Exception as e:
+            # Continue without ratings - not critical
+            pass
+        
         # Check if metadata already exists
         existing_metadata = ArchiveItem.query.filter_by(identifier=identifier).first()
         
@@ -72,8 +85,8 @@ def backup_files(identifier):
         downloaded_files = []
         failed_files = []
         
-        # Filter for audio files (mp3, flac, etc.)
-        audio_extensions = ['.mp3', '.flac', '.wav', '.ogg', '.shn']
+        # Filter for MP3 files only (most efficient and universally allowed)
+        audio_extensions = ['.mp3']
         audio_files = [f for f in files if any(f.get('name', '').lower().endswith(ext) for ext in audio_extensions)]
         
         for file_info in audio_files:
@@ -133,16 +146,136 @@ def backup_files(identifier):
 def backup_full(identifier):
     """Backup both metadata and files for a specific show identifier"""
     try:
-        # First backup metadata
-        metadata_result = backup_metadata(identifier)
-        if metadata_result[1] not in [200, 201]:
-            return metadata_result
+        print(f"[DEBUG] Starting full backup for {identifier}")
         
-        # Then backup files
-        files_result = backup_files(identifier)
-        return files_result
+        # Initialize Archive API
+        archive_api = ArchiveAPI()
+        
+        # Get metadata from Archive.org
+        print(f"[DEBUG] Fetching metadata from Archive.org")
+        metadata_response = archive_api.get_metadata(identifier)
+        if not metadata_response:
+            return jsonify({'error': 'Failed to fetch metadata from Archive.org'}), 404
+        
+        print(f"[DEBUG] Metadata fetched successfully")
+        
+        # Also fetch rating information from search API (not available in metadata API)
+        print(f"[DEBUG] Fetching rating data from search API")
+        try:
+            search_results = archive_api.get_search_results(f"identifier:{identifier}", fields="avg_rating,num_reviews,stars")
+            if search_results and search_results.get('items'):
+                rating_data = search_results['items'][0]
+                # Add rating data to metadata
+                metadata_response['metadata']['avg_rating'] = rating_data.get('avg_rating')
+                metadata_response['metadata']['num_reviews'] = rating_data.get('num_reviews') 
+                metadata_response['metadata']['stars'] = rating_data.get('stars')
+                print(f"[DEBUG] Rating data added: {rating_data.get('avg_rating')} stars, {rating_data.get('num_reviews')} reviews")
+        except Exception as e:
+            print(f"[DEBUG] Could not fetch rating data: {str(e)}")
+            # Continue without ratings - not critical
+        
+        # Check if metadata already exists
+        existing_metadata = ArchiveItem.query.filter_by(identifier=identifier).first()
+        
+        if existing_metadata:
+            print(f"[DEBUG] Updating existing metadata")
+            # Update existing metadata
+            try:
+                update_metadata_from_response(existing_metadata, metadata_response)
+                archive_item = existing_metadata
+            except Exception as e:
+                print(f"[DEBUG] Error updating metadata: {str(e)}")
+                raise e
+        else:
+            print(f"[DEBUG] Creating new metadata")
+            # Create new metadata
+            try:
+                archive_item = create_metadata_from_response(metadata_response)
+                db.session.add(archive_item)
+            except Exception as e:
+                print(f"[DEBUG] Error creating metadata: {str(e)}")
+                raise e
+        
+        print(f"[DEBUG] Committing metadata to database")
+        db.session.commit()
+        print(f"[DEBUG] Metadata committed successfully")
+        
+        # Now backup files
+        files = metadata_response.get('files', [])
+        downloaded_files = []
+        failed_files = []
+        
+        # Filter for MP3 files only (most efficient and universally allowed)
+        audio_extensions = ['.mp3']
+        audio_files = [f for f in files if any(f.get('name', '').lower().endswith(ext) for ext in audio_extensions)]
+        
+        total_files = len(audio_files)
+        print(f"[DEBUG] Found {total_files} audio files to download")
+        
+        for i, file_info in enumerate(audio_files):
+            filename = file_info.get('name')
+            if not filename:
+                continue
+            
+            print(f"[DEBUG] Processing file {i+1}/{total_files}: {filename}")
+            
+            # Check if file already downloaded
+            existing_file = ArchiveFile.query.filter_by(
+                archive_item_id=archive_item.id,
+                name=filename
+            ).first()
+            
+            if existing_file and existing_file.is_downloaded:
+                print(f"[DEBUG] File already downloaded: {filename}")
+                downloaded_files.append(filename)
+                continue
+            
+            # Download file
+            print(f"[DEBUG] Downloading: {filename}")
+            local_path = archive_api.download_file(identifier, filename)
+            
+            if local_path:
+                # Create or update file record
+                if existing_file:
+                    existing_file.local_path = local_path
+                    existing_file.is_downloaded = True
+                    existing_file.download_date = datetime.utcnow()
+                else:
+                    archive_file = create_file_from_info(file_info, archive_item.id)
+                    archive_file.local_path = local_path
+                    archive_file.is_downloaded = True
+                    archive_file.download_date = datetime.utcnow()
+                    db.session.add(archive_file)
+                
+                downloaded_files.append(filename)
+                print(f"[DEBUG] Downloaded {i+1}/{total_files}: {filename}")
+            else:
+                failed_files.append(filename)
+                print(f"[DEBUG] Failed {i+1}/{total_files}: {filename}")
+        
+        # Update archive item backup status
+        archive_item.is_backed_up = True
+        archive_item.backup_date = datetime.utcnow()
+        
+        db.session.commit()
+        print(f"[DEBUG] Full backup completed: {len(downloaded_files)} downloaded, {len(failed_files)} failed")
+        
+        return jsonify({
+            'message': 'Full backup completed successfully',
+            'identifier': identifier,
+            'downloaded_files': downloaded_files,
+            'failed_files': failed_files,
+            'total_downloaded': len(downloaded_files),
+            'total_failed': len(failed_files),
+            'total_files': total_files,
+            'storage_location': f'storage/files/{identifier}/'
+        })
         
     except Exception as e:
+        print(f"[DEBUG] Exception in backup_full: {str(e)}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @backup_bp.route('/status/<identifier>', methods=['GET'])
@@ -317,7 +450,14 @@ def create_file_from_info(file_info, archive_item_id):
     archive_file.title = file_info.get('title')
     archive_file.bitrate = file_info.get('bitrate')
     archive_file.creator = file_info.get('creator')
-    archive_file.private = file_info.get('private', False)
+    
+    # Convert string 'true'/'false' to boolean
+    private_value = file_info.get('private', False)
+    if isinstance(private_value, str):
+        archive_file.private = private_value.lower() == 'true'
+    else:
+        archive_file.private = bool(private_value)
+    
     archive_file.rotation = file_info.get('rotation')
     archive_file.summation = file_info.get('summation')
     
