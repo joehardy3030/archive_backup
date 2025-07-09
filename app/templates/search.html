@@ -2,6 +2,48 @@
 
 {% block title %}Search Archive - Archive Backup{% endblock %}
 
+{% block head %}
+<style>
+    .metadata-row {
+        background-color: #f8f9fa;
+    }
+    
+    .metadata-container {
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .metadata-row .card {
+        margin-bottom: 0;
+        border: 1px solid #dee2e6;
+        background-color: #ffffff;
+    }
+    
+    .metadata-row .card-title {
+        color: #007bff;
+        font-weight: bold;
+    }
+    
+    .metadata-row .table-borderless td {
+        padding: 0.25rem 0.5rem;
+        vertical-align: top;
+    }
+    
+    .metadata-row .table-borderless td:first-child {
+        width: 120px;
+        color: #6c757d;
+    }
+    
+    .toggle-btn {
+        transition: transform 0.2s ease;
+    }
+    
+    .toggle-btn:hover {
+        transform: scale(1.1);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <!-- Header -->
@@ -187,6 +229,7 @@
                             <table class="table table-hover show-table">
                                 <thead>
                                     <tr>
+                                        <th></th>
                                         <th>Show</th>
                                         <th>Date</th>
                                         <th>Venue</th>
@@ -335,6 +378,10 @@
         results.items.forEach(item => {
             const row = createResultRow(item);
             tbody.appendChild(row);
+            // Add the metadata row right after the main row
+            if (row.nextMetadataRow) {
+                tbody.appendChild(row.nextMetadataRow);
+            }
         });
 
         // Show additional info for hybrid search
@@ -345,12 +392,19 @@
 
     function createResultRow(item) {
         const row = document.createElement('tr');
+        const metadataRowId = `metadata-${item.identifier}`;
         
         // Determine source and status
         const isLocal = item.result_source === 'local' || item.is_backed_up;
         const source = item.result_source || (isLocal ? 'local' : 'archive.org');
         
         row.innerHTML = `
+            <td>
+                <button class="btn btn-sm btn-outline-secondary toggle-btn" onclick="toggleMetadata('${item.identifier}')" 
+                        id="toggle-${item.identifier}" title="Show/Hide Metadata">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </td>
             <td>
                 <strong>${item.title || item.identifier}</strong>
                 ${item.description ? `<br><small class="text-muted">${item.description.substring(0, 100)}${item.description.length > 100 ? '...' : ''}</small>` : ''}
@@ -403,6 +457,85 @@
             </td>
         `;
 
+        // Create metadata row (initially hidden)
+        const metadataRow = document.createElement('tr');
+        metadataRow.id = metadataRowId;
+        metadataRow.style.display = 'none';
+        metadataRow.className = 'metadata-row';
+        
+        metadataRow.innerHTML = `
+            <td colspan="9">
+                <div class="metadata-container bg-light p-3 rounded">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary"><i class="bi bi-info-circle"></i> Basic Information</h6>
+                            <table class="table table-sm table-borderless">
+                                <tr><td><strong>Identifier:</strong></td><td>${item.identifier}</td></tr>
+                                <tr><td><strong>Title:</strong></td><td>${item.title || 'N/A'}</td></tr>
+                                <tr><td><strong>Creator:</strong></td><td>${item.creator || 'N/A'}</td></tr>
+                                <tr><td><strong>Date:</strong></td><td>${item.date || 'N/A'}</td></tr>
+                                <tr><td><strong>Venue:</strong></td><td>${item.venue || 'N/A'}</td></tr>
+                                <tr><td><strong>Collection:</strong></td><td>${item.collection || 'N/A'}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-primary"><i class="bi bi-star"></i> Quality & Stats</h6>
+                            <table class="table table-sm table-borderless">
+                                <tr><td><strong>Rating:</strong></td><td>${item.avg_rating ? `${item.avg_rating} stars` : 'N/A'}</td></tr>
+                                <tr><td><strong>Reviews:</strong></td><td>${item.num_reviews || 'N/A'}</td></tr>
+                                <tr><td><strong>Source:</strong></td><td>${item.source || 'N/A'}</td></tr>
+                                <tr><td><strong>Transferer:</strong></td><td>${item.transferer || 'N/A'}</td></tr>
+                                <tr><td><strong>Coverage:</strong></td><td>${item.coverage || 'N/A'}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    ${item.description ? `
+                        <div class="mt-3">
+                            <h6 class="text-primary"><i class="bi bi-card-text"></i> Description</h6>
+                            <p class="text-muted">${item.description}</p>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="text-primary mb-0"><i class="bi bi-file-earmark"></i> Files & Backup Status</h6>
+                            ${!isLocal ? `
+                                <button class="btn btn-sm btn-success" onclick="showBackupModal('${item.identifier}', '${item.title || item.identifier}', '${item.date || ''}', '${item.venue || ''}')">
+                                    <i class="bi bi-cloud-download"></i> Backup This Show
+                                </button>
+                            ` : ''}
+                        </div>
+                        <div class="mt-2">
+                            ${item.total_files !== undefined ? `
+                                <span class="badge bg-info me-2">
+                                    <i class="bi bi-files"></i> ${item.total_files} total files
+                                </span>
+                            ` : ''}
+                            ${item.downloaded_files !== undefined ? `
+                                <span class="badge bg-success me-2">
+                                    <i class="bi bi-download"></i> ${item.downloaded_files} downloaded
+                                </span>
+                            ` : ''}
+                            <span class="badge ${isLocal ? 'bg-success' : 'bg-warning'}">
+                                <i class="bi bi-${isLocal ? 'hdd-stack' : 'cloud'}"></i> 
+                                ${isLocal ? 'Available Locally' : 'Archive.org Only'}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 text-center">
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadFullMetadata('${item.identifier}')">
+                            <i class="bi bi-arrow-clockwise"></i> Load Full Metadata
+                        </button>
+                    </div>
+                </div>
+            </td>
+        `;
+
+        // Store the metadata row reference
+        row.nextMetadataRow = metadataRow;
+        
         return row;
     }
 
@@ -495,5 +628,155 @@
             performSearch();
         }
     });
+
+    // Toggle metadata visibility
+    function toggleMetadata(identifier) {
+        const metadataRow = document.getElementById(`metadata-${identifier}`);
+        const toggleBtn = document.getElementById(`toggle-${identifier}`);
+        const icon = toggleBtn.querySelector('i');
+        
+        if (metadataRow.style.display === 'none') {
+            metadataRow.style.display = 'table-row';
+            icon.className = 'bi bi-chevron-down';
+        } else {
+            metadataRow.style.display = 'none';
+            icon.className = 'bi bi-chevron-right';
+        }
+    }
+
+    // Load full metadata from Archive.org
+    function loadFullMetadata(identifier) {
+        const metadataContainer = document.querySelector(`#metadata-${identifier} .metadata-container`);
+        const loadBtn = metadataContainer.querySelector('.btn-outline-primary');
+        
+        // Show loading state
+        loadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Loading...';
+        loadBtn.disabled = true;
+        
+        // Fetch full metadata
+        fetch(`/api/metadata/${identifier}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('Error loading metadata: ' + data.error, 'danger');
+                    loadBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Load Full Metadata';
+                    loadBtn.disabled = false;
+                } else {
+                    // Update the metadata container with full details
+                    updateMetadataDisplay(identifier, data);
+                    loadBtn.innerHTML = '<i class="bi bi-check-circle"></i> Full Metadata Loaded';
+                    loadBtn.disabled = true;
+                }
+            })
+            .catch(error => {
+                showAlert('Error loading metadata: ' + error.message, 'danger');
+                loadBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Load Full Metadata';
+                loadBtn.disabled = false;
+            });
+    }
+
+    // Update metadata display with full details
+    function updateMetadataDisplay(identifier, fullData) {
+        const metadataContainer = document.querySelector(`#metadata-${identifier} .metadata-container`);
+        const metadata = fullData.metadata || {};
+        
+        // Enhanced metadata display
+        const enhancedHtml = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-primary"><i class="bi bi-info-circle"></i> Basic Information</h6>
+                    <table class="table table-sm table-borderless">
+                        <tr><td><strong>Identifier:</strong></td><td>${metadata.identifier || 'N/A'}</td></tr>
+                        <tr><td><strong>Title:</strong></td><td>${metadata.title || 'N/A'}</td></tr>
+                        <tr><td><strong>Creator:</strong></td><td>${metadata.creator || 'N/A'}</td></tr>
+                        <tr><td><strong>Date:</strong></td><td>${metadata.date || 'N/A'}</td></tr>
+                        <tr><td><strong>Venue:</strong></td><td>${metadata.venue || 'N/A'}</td></tr>
+                        <tr><td><strong>Collection:</strong></td><td>${metadata.collection || 'N/A'}</td></tr>
+                        <tr><td><strong>Subject:</strong></td><td>${metadata.subject || 'N/A'}</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-primary"><i class="bi bi-star"></i> Quality & Stats</h6>
+                    <table class="table table-sm table-borderless">
+                        <tr><td><strong>Rating:</strong></td><td>${metadata.avg_rating ? `${metadata.avg_rating} stars` : 'N/A'}</td></tr>
+                        <tr><td><strong>Reviews:</strong></td><td>${metadata.num_reviews || 'N/A'}</td></tr>
+                        <tr><td><strong>Source:</strong></td><td>${metadata.source || 'N/A'}</td></tr>
+                        <tr><td><strong>Transferer:</strong></td><td>${metadata.transferer || 'N/A'}</td></tr>
+                        <tr><td><strong>Coverage:</strong></td><td>${metadata.coverage || 'N/A'}</td></tr>
+                        <tr><td><strong>Lineage:</strong></td><td>${metadata.lineage || 'N/A'}</td></tr>
+                    </table>
+                </div>
+            </div>
+            
+            ${metadata.description ? `
+                <div class="mt-3">
+                    <h6 class="text-primary"><i class="bi bi-card-text"></i> Description</h6>
+                    <p class="text-muted">${metadata.description}</p>
+                </div>
+            ` : ''}
+            
+            ${metadata.notes ? `
+                <div class="mt-3">
+                    <h6 class="text-primary"><i class="bi bi-sticky"></i> Notes</h6>
+                    <p class="text-muted">${metadata.notes}</p>
+                </div>
+            ` : ''}
+            
+            <div class="mt-3">
+                <h6 class="text-primary"><i class="bi bi-file-earmark"></i> Files Information</h6>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${fullData.files_count || 'N/A'}</h5>
+                                <p class="card-text text-muted">Total Files</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${fullData.item_size ? formatFileSize(fullData.item_size) : 'N/A'}</h5>
+                                <p class="card-text text-muted">Total Size</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${fullData.server || 'N/A'}</h5>
+                                <p class="card-text text-muted">Server</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-3 text-center">
+                <button class="btn btn-sm btn-outline-success" onclick="showBackupModal('${identifier}', '${metadata.title || identifier}', '${metadata.date || ''}', '${metadata.venue || ''}')">
+                    <i class="bi bi-cloud-download"></i> Backup This Show
+                </button>
+                <a href="https://archive.org/details/${identifier}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-box-arrow-up-right"></i> View on Archive.org
+                </a>
+                <button class="btn btn-sm btn-outline-primary" disabled>
+                    <i class="bi bi-check-circle"></i> Full Metadata Loaded
+                </button>
+            </div>
+        `;
+        
+        metadataContainer.innerHTML = enhancedHtml;
+    }
+
+    // Helper function to format file sizes
+    function formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return 'N/A';
+        
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        
+        if (i === 0) return bytes + ' ' + sizes[i];
+        return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+    }
 </script>
 {% endblock %} 

@@ -179,6 +179,23 @@ def quick_backup():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@main_bp.route('/api/metadata/<identifier>')
+def get_metadata(identifier):
+    """Get metadata for a specific identifier"""
+    try:
+        # Initialize Archive API
+        archive_api = ArchiveAPI()
+        
+        # Get metadata from Archive.org
+        metadata_response = archive_api.get_metadata(identifier)
+        if not metadata_response:
+            return jsonify({'error': 'Failed to fetch metadata from Archive.org'}), 404
+        
+        return jsonify(metadata_response)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @main_bp.route('/health')
 def health_check():
     """Health check endpoint"""
