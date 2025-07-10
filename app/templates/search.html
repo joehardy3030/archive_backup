@@ -59,6 +59,41 @@
         margin-left: 1rem;
         line-height: 1.4;
     }
+    
+    .audio-player {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        position: sticky;
+        top: 10px;
+        z-index: 100;
+    }
+    
+    .audio-player audio {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .now-playing {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+    
+    .play-btn {
+        cursor: pointer;
+        color: #007bff;
+    }
+    
+    .play-btn:hover {
+        color: #0056b3;
+    }
+    
+    .playing-row {
+        background-color: #e3f2fd !important;
+    }
 </style>
 {% endblock %}
 
@@ -885,11 +920,26 @@
             
             ${fullData.files && fullData.files.length > 0 ? `
                 <div class="mt-3">
+                    <!-- Audio Player -->
+                    <div class="audio-player" id="audioPlayer" style="display: none;">
+                        <div class="now-playing" id="nowPlaying">Select a track to play</div>
+                        <audio id="audioElement" controls preload="none">
+                            Your browser does not support the audio element.
+                        </audio>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Use ← → keys to skip tracks</small>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="togglePlaylist()">
+                                <i class="bi bi-list"></i> Playlist
+                            </button>
+                        </div>
+                    </div>
+                    
                     <h6 class="text-primary">Files (${fullData.files.length}):</h6>
                     <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
-                        <table class="table table-sm table-striped">
+                        <table class="table table-sm table-striped" id="filesTable-${identifier}">
                             <thead>
                                 <tr>
+                                    <th width="40px">Play</th>
                                     <th>Filename</th>
                                     <th>Size</th>
                                     <th>Format</th>
@@ -897,8 +947,17 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                ${fullData.files.map(file => `
-                                    <tr>
+                                ${fullData.files.map((file, index) => `
+                                    <tr data-file-index="${index}" data-identifier="${identifier}">
+                                        <td>
+                                            ${isArchiveFile(file) ? `
+                                                <i class="bi bi-play-circle play-btn" 
+                                                   onclick="playAudio('${identifier}', '${file.name}', ${file.is_downloaded || false}, ${index})"
+                                                   title="Play ${file.name}"></i>
+                                            ` : `
+                                                <i class="bi bi-dash-circle text-muted" title="Not audio file"></i>
+                                            `}
+                                        </td>
                                         <td>${file.name || 'N/A'}</td>
                                         <td>${file.size ? formatFileSize(parseInt(file.size)) : 'N/A'}</td>
                                         <td>${file.format || 'N/A'}</td>
@@ -950,5 +1009,183 @@
         if (i === 0) return bytes + ' ' + sizes[i];
         return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
     }
+    
+    // Helper function to check if file is audio
+    function isArchiveFile(file) {
+        if (!file.name) return false;
+        const audioExtensions = ['.mp3', '.flac', '.ogg', '.wav', '.m4a'];
+        return audioExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    }
+    
+    // Global playlist variables
+    let currentPlaylist = [];
+    let currentTrackIndex = 0;
+    let currentIdentifier = '';
+    
+    // Audio playback function
+    function playAudio(identifier, filename, isDownloaded, trackIndex) {
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioElement = document.getElementById('audioElement');
+        const nowPlaying = document.getElementById('nowPlaying');
+        
+        // Show audio player
+        audioPlayer.style.display = 'block';
+        
+        // Update current track info
+        currentIdentifier = identifier;
+        currentTrackIndex = trackIndex;
+        
+        // Build playlist from current files
+        const filesTable = document.getElementById(`filesTable-${identifier}`);
+        if (filesTable) {
+            currentPlaylist = Array.from(filesTable.querySelectorAll('tbody tr')).map((row, playlistIndex) => ({
+                identifier: row.dataset.identifier,
+                filename: row.children[1].textContent.trim(),
+                isDownloaded: row.querySelector('.bg-success') !== null,
+                index: parseInt(row.dataset.fileIndex),
+                playlistIndex: playlistIndex
+            })).filter(file => isArchiveFile({name: file.filename}));
+            
+            // Update currentTrackIndex to match the playlist position
+            currentTrackIndex = currentPlaylist.findIndex(track => track.index === trackIndex);
+        }
+        
+        // Update now playing display
+        nowPlaying.textContent = `Now Playing: ${filename}`;
+        
+        // Clear previous highlights
+        document.querySelectorAll('.playing-row').forEach(row => {
+            row.classList.remove('playing-row');
+        });
+        
+        // Highlight current track
+        const currentRow = document.querySelector(`tr[data-file-index="${trackIndex}"]`);
+        if (currentRow) {
+            currentRow.classList.add('playing-row');
+        }
+        
+        // Set audio source
+        if (isDownloaded) {
+            // Play local file
+            audioElement.src = `/play/${identifier}/${filename}`;
+        } else {
+            // Play from Archive.org
+            audioElement.src = `https://archive.org/download/${identifier}/${filename}`;
+        }
+        
+        // Play the audio
+        audioElement.play().catch(error => {
+            console.error('Error playing audio:', error);
+            nowPlaying.textContent = `Error playing: ${filename}`;
+        });
+    }
+    
+    // Playlist toggle function
+    function togglePlaylist() {
+        // Simple implementation - could expand to show full playlist UI
+        if (currentPlaylist.length > 0) {
+            const availableCount = currentPlaylist.filter(track => 
+                track.isDownloaded || isArchiveFile({name: track.filename})
+            ).length;
+            
+            const playlistInfo = currentPlaylist.map((track, index) => {
+                let status = '';
+                if (index === currentTrackIndex) {
+                    status = ' (▶ playing)';
+                } else if (track.isDownloaded) {
+                    status = ' ✓ downloaded';
+                } else if (isArchiveFile({name: track.filename})) {
+                    status = ' 🌐 stream';
+                } else {
+                    status = ' ❌ unavailable';
+                }
+                return `${index + 1}. ${track.filename}${status}`;
+            }).join('\n');
+            
+            alert(`Playlist (${availableCount}/${currentPlaylist.length} available):\n\n${playlistInfo}\n\n✓ = Downloaded\n🌐 = Stream from Archive.org\n❌ = Not playable`);
+        } else {
+            alert('No playlist available');
+        }
+    }
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        if (currentPlaylist.length === 0) return;
+        
+        if (e.key === 'ArrowRight') {
+            // Next track
+            e.preventDefault();
+            nextTrack();
+        } else if (e.key === 'ArrowLeft') {
+            // Previous track
+            e.preventDefault();
+            previousTrack();
+        } else if (e.key === ' ') {
+            // Play/pause
+            e.preventDefault();
+            const audioElement = document.getElementById('audioElement');
+            if (audioElement.paused) {
+                audioElement.play();
+            } else {
+                audioElement.pause();
+            }
+        }
+    });
+    
+    // Next track function - find next available track
+    function nextTrack() {
+        let nextIndex = currentTrackIndex + 1;
+        
+        // Find the next available (playable) track
+        while (nextIndex < currentPlaylist.length) {
+            const track = currentPlaylist[nextIndex];
+            
+            // Check if track is playable (downloaded OR can stream from Archive.org)
+            if (track.isDownloaded || isArchiveFile({name: track.filename})) {
+                playAudio(track.identifier, track.filename, track.isDownloaded, track.index);
+                return;
+            }
+            nextIndex++;
+        }
+        
+        // No more playable tracks, end of playlist
+        const nowPlaying = document.getElementById('nowPlaying');
+        if (nowPlaying) {
+            nowPlaying.textContent = 'End of playlist';
+        }
+    }
+    
+    // Previous track function - find previous available track
+    function previousTrack() {
+        let prevIndex = currentTrackIndex - 1;
+        
+        // Find the previous available (playable) track
+        while (prevIndex >= 0) {
+            const track = currentPlaylist[prevIndex];
+            
+            // Check if track is playable (downloaded OR can stream from Archive.org)
+            if (track.isDownloaded || isArchiveFile({name: track.filename})) {
+                playAudio(track.identifier, track.filename, track.isDownloaded, track.index);
+                return;
+            }
+            prevIndex--;
+        }
+        
+        // No previous playable tracks, stay at beginning
+        const nowPlaying = document.getElementById('nowPlaying');
+        if (nowPlaying) {
+            nowPlaying.textContent = 'Beginning of playlist';
+        }
+    }
+    
+    // Auto-play next track when current ends
+    document.addEventListener('DOMContentLoaded', function() {
+        const audioElement = document.getElementById('audioElement');
+        if (audioElement) {
+            audioElement.addEventListener('ended', function() {
+                nextTrack();
+            });
+        }
+    });
 </script>
 {% endblock %} 

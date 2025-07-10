@@ -258,12 +258,6 @@
                                                     </td>
                                                     <td>
                                                         <div class="btn-group btn-group-sm">
-                                                            {% if file.is_downloaded and file.local_path %}
-                                                                <button class="btn btn-outline-primary" 
-                                                                        onclick="playFile('{{ file.local_path }}')">
-                                                                    <i class="fas fa-play"></i>
-                                                                </button>
-                                                            {% endif %}
                                                             <a href="https://archive.org/download/{{ item.identifier }}/{{ file.name }}" 
                                                                target="_blank" 
                                                                class="btn btn-outline-secondary">
@@ -373,9 +367,6 @@ function backupFull(identifier) {
     });
 }
 
-function playFile(filePath) {
-    alert('Audio playback not yet implemented.\n\nFile location: ' + filePath);
-    // TODO: Implement audio playback functionality
-}
+    // Placeholder for any future show-specific functionality
 </script>
 {% endblock %} 

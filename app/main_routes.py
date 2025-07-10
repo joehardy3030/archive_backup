@@ -1,8 +1,9 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app, Response
 from app.models.show_metadata import ArchiveItem, db
 from app.api.archive_api import ArchiveAPI
 from sqlalchemy import desc
 from datetime import datetime
+import os
 
 main_bp = Blueprint('main', __name__)
 
@@ -356,3 +357,75 @@ def health_check():
             'status': 'unhealthy',
             'error': str(e)
         }), 500 
+
+@main_bp.route('/play/<identifier>/<filename>')
+def play_file(identifier, filename):
+    """Serve audio files for playback"""
+    try:
+        # Security: Verify the file belongs to a backed up show
+        item = ArchiveItem.query.filter_by(identifier=identifier).first_or_404()
+        
+        # Find the specific file
+        file_record = None
+        for file_obj in item.files:
+            if file_obj.name == filename:
+                file_record = file_obj
+                break
+        
+        if not file_record:
+            return jsonify({'error': f'File {filename} not found in database'}), 404
+        
+        # Check if file is downloaded and has local path
+        if not file_record.is_downloaded:
+            return jsonify({'error': f'File {filename} not downloaded yet'}), 404
+        
+        if not file_record.local_path:
+            return jsonify({'error': f'File {filename} has no local path'}), 404
+        
+        # Get the full path
+        files_storage_path = current_app.config.get('FILES_STORAGE_PATH', 'storage/files')
+        
+        if file_record.local_path:
+            # Check if local_path already contains the storage path prefix
+            if file_record.local_path.startswith('storage/files/'):
+                # local_path already contains the storage path, use it directly
+                file_path = file_record.local_path
+            else:
+                # local_path is relative to FILES_STORAGE_PATH
+                file_path = os.path.join(files_storage_path, file_record.local_path)
+        else:
+            # Fallback: construct path based on identifier and filename
+            file_path = os.path.join(files_storage_path, identifier, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': f'File not found on disk: {file_path}'}), 404
+        
+        # Determine content type
+        content_type = 'audio/mpeg'  # Default
+        if filename.lower().endswith('.flac'):
+            content_type = 'audio/flac'
+        elif filename.lower().endswith('.mp3'):
+            content_type = 'audio/mpeg'
+        elif filename.lower().endswith('.ogg'):
+            content_type = 'audio/ogg'
+        elif filename.lower().endswith('.wav'):
+            content_type = 'audio/wav'
+        
+        # Support range requests for seeking
+        def generate():
+            with open(file_path, 'rb') as f:
+                while True:
+                    data = f.read(8192)  # 8KB chunks
+                    if not data:
+                        break
+                    yield data
+        
+        response = Response(generate(), mimetype=content_type)
+        response.headers['Accept-Ranges'] = 'bytes'
+        response.headers['Content-Length'] = str(os.path.getsize(file_path))
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500 
