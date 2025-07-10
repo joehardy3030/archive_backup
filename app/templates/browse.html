@@ -491,12 +491,12 @@
                                 ${fullData.files.map((file, index) => `
                                     <tr data-file-index="${index}" data-identifier="${identifier}">
                                         <td>
-                                            ${(file.is_downloaded || isArchiveFile(file)) ? `
+                                            ${isArchiveFile(file) ? `
                                                 <i class="bi bi-play-circle play-btn" 
                                                    onclick="playAudio('${identifier}', '${file.name}', ${file.is_downloaded}, ${index})"
                                                    title="Play ${file.name}"></i>
                                             ` : `
-                                                <i class="bi bi-dash-circle text-muted" title="Not available"></i>
+                                                <i class="bi bi-dash-circle text-muted" title="MP3 files only"></i>
                                             `}
                                         </td>
                                         <td>${file.name || 'N/A'}</td>
@@ -555,11 +555,10 @@
         return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
     }
     
-    // Helper function to check if file is audio
+    // Helper function to check if file is MP3 (only format we play)
     function isArchiveFile(file) {
         if (!file.name) return false;
-        const audioExtensions = ['.mp3', '.flac', '.ogg', '.wav', '.m4a'];
-        return audioExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+        return file.name.toLowerCase().endsWith('.mp3');
     }
     
     // Global playlist variables
@@ -618,10 +617,18 @@
             audioElement.src = `https://archive.org/download/${identifier}/${filename}`;
         }
         
+        // Add error handling for auto-skip
+        audioElement.onerror = function() {
+            console.error('Error playing audio:', filename);
+            nowPlaying.textContent = `Error playing ${filename}, skipping...`;
+            setTimeout(() => nextTrack(), 1000); // Skip to next track after 1 second
+        };
+        
         // Play the audio
         audioElement.play().catch(error => {
             console.error('Error playing audio:', error);
-            nowPlaying.textContent = `Error playing: ${filename}`;
+            nowPlaying.textContent = `Error playing ${filename}, skipping...`;
+            setTimeout(() => nextTrack(), 1000); // Skip to next track after 1 second
         });
     }
     
@@ -647,7 +654,7 @@
                 return `${index + 1}. ${track.filename}${status}`;
             }).join('\n');
             
-            alert(`Playlist (${availableCount}/${currentPlaylist.length} available):\n\n${playlistInfo}\n\n✓ = Downloaded\n🌐 = Stream from Archive.org\n❌ = Not playable`);
+            alert(`MP3 Playlist (${availableCount}/${currentPlaylist.length} available):\n\n${playlistInfo}\n\n✓ = Downloaded MP3\n🌐 = Stream MP3 from Archive.org\n❌ = Not available`);
         } else {
             alert('No playlist available');
         }
