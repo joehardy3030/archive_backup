@@ -94,6 +94,102 @@
     .playing-row {
         background-color: #e3f2fd !important;
     }
+
+    /* Playlist panel styles */
+    .playlist-panel {
+        position: fixed;
+        top: 120px;
+        right: 20px;
+        width: 350px;
+        max-height: 60vh;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        display: none;
+    }
+
+    .playlist-header {
+        padding: 1rem;
+        border-bottom: 1px solid #dee2e6;
+        background: #f8f9fa;
+        border-radius: 0.375rem 0.375rem 0 0;
+    }
+
+    .playlist-content {
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+
+    .playlist-track {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .playlist-track:hover {
+        background-color: #f8f9fa;
+    }
+
+    .playlist-track.current {
+        background-color: #e3f2fd;
+        border-left: 4px solid #007bff;
+    }
+
+    .playlist-track.unavailable {
+        color: #6c757d;
+        cursor: not-allowed;
+    }
+
+    .playlist-track.unavailable:hover {
+        background-color: transparent;
+    }
+
+    .playlist-track-number {
+        font-weight: bold;
+        color: #6c757d;
+        min-width: 2rem;
+    }
+
+    .playlist-track-info {
+        flex: 1;
+    }
+
+    .playlist-track-title {
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+    }
+
+    .playlist-track-filename {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+
+    .playlist-track-status {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        white-space: nowrap;
+    }
+
+    .playlist-track-status.downloaded {
+        background-color: #d4edda;
+        color: #155724;
+    }
+
+    .playlist-track-status.streamable {
+        background-color: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .playlist-track-status.unavailable {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
 </style>
 {% endblock %}
 
@@ -328,6 +424,25 @@
         </div>
     </div>
 </div>
+
+<!-- Playlist Panel -->
+<div id="playlistPanel" class="playlist-panel">
+    <div class="playlist-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Playlist</h6>
+            <button class="btn btn-sm btn-outline-secondary" onclick="togglePlaylist()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </div>
+    <div class="playlist-content">
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-music-note-list" style="font-size: 2rem;"></i>
+            <p class="mt-2 mb-0">No playlist available</p>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -390,6 +505,9 @@
         if (!container) return;
         
         const metadata = fullData.metadata || {};
+        
+        // Store files data globally for playlist access
+        window.currentFilesData = fullData.files || [];
         
         // Helper function to format arrays
         function formatArray(arr) {
@@ -461,7 +579,7 @@
             ${fullData.files && fullData.files.length > 0 ? `
                 <div class="mt-3">
                     <!-- Audio Player -->
-                    <div class="audio-player" id="audioPlayer" style="display: none;">
+                    <div class="audio-player" id="audioPlayer">
                         <div class="now-playing" id="nowPlaying">Select a track to play</div>
                         <audio id="audioElement" controls preload="none">
                             Your browser does not support the audio element.
@@ -493,8 +611,10 @@
                                         <td>
                                             ${isArchiveFile(file) ? `
                                                 <i class="bi bi-play-circle play-btn" 
-                                                   onclick="playAudio('${identifier}', '${file.name}', ${file.is_downloaded}, ${index})"
-                                                   title="Play ${file.name}"></i>
+                                                   onclick="playAudioFromTable('${identifier}', '${file.name}', ${file.is_downloaded}, ${index})"
+                                                   data-title="${(file.title || '').replace(/"/g, '&quot;')}"
+                                                   data-artist="${(file.artist || file.creator || '').replace(/"/g, '&quot;')}"
+                                                   title="Play ${file.title || file.name}"></i>
                                             ` : `
                                                 <i class="bi bi-dash-circle text-muted" title="MP3 files only"></i>
                                             `}
@@ -526,6 +646,20 @@
                 </a>
             </div>
         `;
+        
+        // Initialize playlist with all available tracks
+        initializePlaylist(identifier);
+        
+        // Show playlist panel by default if there are playable tracks
+        const playableTracks = fullData.files.filter(file => isArchiveFile(file));
+        if (playableTracks.length > 0) {
+            setTimeout(() => {
+                const playlistPanel = document.getElementById('playlistPanel');
+                if (playlistPanel) {
+                    playlistPanel.style.display = 'block';
+                }
+            }, 100);
+        }
     }
 
     // Display error state
@@ -566,36 +700,93 @@
     let currentTrackIndex = 0;
     let currentIdentifier = '';
     
+    // Initialize playlist from metadata without playing
+    function initializePlaylist(identifier) {
+        currentIdentifier = identifier;
+        currentTrackIndex = 0;
+        
+        // Build playlist from current files with metadata
+        const filesTable = document.getElementById(`filesTable-${identifier}`);
+        if (filesTable) {
+            // Get file metadata from the API response stored in a global variable
+            const files = window.currentFilesData || [];
+            
+            currentPlaylist = Array.from(filesTable.querySelectorAll('tbody tr')).map((row, playlistIndex) => {
+                const filename = row.children[1].textContent.trim();
+                const fileIndex = parseInt(row.dataset.fileIndex);
+                const fileData = files[fileIndex] || {};
+                
+                return {
+                    identifier: row.dataset.identifier,
+                    filename: filename,
+                    title: fileData.title || filename.replace(/\.[^/.]+$/, ""), // Remove extension as fallback
+                    artist: fileData.artist || fileData.creator || '',
+                    isDownloaded: row.querySelector('.bg-success') !== null,
+                    index: fileIndex,
+                    playlistIndex: playlistIndex
+                };
+            }).filter(file => isArchiveFile({name: file.filename}));
+        }
+        
+        // Update playlist panel
+        updatePlaylistPanel();
+    }
+
+    // Wrapper function for table-based audio playback
+    function playAudioFromTable(identifier, filename, isDownloaded, trackIndex) {
+        const playButton = event.target;
+        const title = playButton.getAttribute('data-title') || '';
+        const artist = playButton.getAttribute('data-artist') || '';
+        playAudio(identifier, filename, isDownloaded, trackIndex, title, artist);
+    }
+
     // Audio playback function
-    function playAudio(identifier, filename, isDownloaded, trackIndex) {
+    function playAudio(identifier, filename, isDownloaded, trackIndex, title, artist) {
         const audioPlayer = document.getElementById('audioPlayer');
         const audioElement = document.getElementById('audioElement');
         const nowPlaying = document.getElementById('nowPlaying');
-        
-        // Show audio player
-        audioPlayer.style.display = 'block';
         
         // Update current track info
         currentIdentifier = identifier;
         currentTrackIndex = trackIndex;
         
-        // Build playlist from current files
+        // Build playlist from current files with metadata
         const filesTable = document.getElementById(`filesTable-${identifier}`);
         if (filesTable) {
-            currentPlaylist = Array.from(filesTable.querySelectorAll('tbody tr')).map((row, playlistIndex) => ({
-                identifier: row.dataset.identifier,
-                filename: row.children[1].textContent.trim(),
-                isDownloaded: row.querySelector('.bg-success') !== null,
-                index: parseInt(row.dataset.fileIndex),
-                playlistIndex: playlistIndex
-            })).filter(file => isArchiveFile({name: file.filename}));
+            // Get file metadata from the API response stored in a global variable
+            const files = window.currentFilesData || [];
+            
+            currentPlaylist = Array.from(filesTable.querySelectorAll('tbody tr')).map((row, playlistIndex) => {
+                const filename = row.children[1].textContent.trim();
+                const fileIndex = parseInt(row.dataset.fileIndex);
+                const fileData = files[fileIndex] || {};
+                
+                return {
+                    identifier: row.dataset.identifier,
+                    filename: filename,
+                    title: fileData.title || filename.replace(/\.[^/.]+$/, ""), // Remove extension as fallback
+                    artist: fileData.artist || fileData.creator || '',
+                    isDownloaded: row.querySelector('.bg-success') !== null,
+                    index: fileIndex,
+                    playlistIndex: playlistIndex
+                };
+            }).filter(file => isArchiveFile({name: file.filename}));
             
             // Update currentTrackIndex to match the playlist position
             currentTrackIndex = currentPlaylist.findIndex(track => track.index === trackIndex);
         }
         
-        // Update now playing display
-        nowPlaying.textContent = `Now Playing: ${filename}`;
+        // Get current track info for display
+        const currentTrack = currentPlaylist[currentTrackIndex];
+        const displayTitle = currentTrack?.title || title || filename;
+        const displayArtist = currentTrack?.artist || artist || '';
+        
+        // Update now playing display with title and artist
+        if (displayArtist) {
+            nowPlaying.textContent = `Now Playing: ${displayTitle} - ${displayArtist}`;
+        } else {
+            nowPlaying.textContent = `Now Playing: ${displayTitle}`;
+        }
         
         // Clear previous highlights
         document.querySelectorAll('.playing-row').forEach(row => {
@@ -620,47 +811,106 @@
         // Add error handling for auto-skip
         audioElement.onerror = function() {
             console.error('Error playing audio:', filename);
-            nowPlaying.textContent = `Error playing ${filename}, skipping...`;
+            nowPlaying.textContent = `Error playing ${displayTitle}, skipping...`;
             setTimeout(() => nextTrack(), 1000); // Skip to next track after 1 second
         };
         
         // Play the audio
         audioElement.play().catch(error => {
             console.error('Error playing audio:', error);
-            nowPlaying.textContent = `Error playing ${filename}, skipping...`;
+            nowPlaying.textContent = `Error playing ${displayTitle}, skipping...`;
             setTimeout(() => nextTrack(), 1000); // Skip to next track after 1 second
         });
+        
+        // Update playlist panel
+        updatePlaylistPanel();
     }
     
     // Playlist toggle function
     function togglePlaylist() {
-        // Simple implementation - could expand to show full playlist UI
-        if (currentPlaylist.length > 0) {
-            const availableCount = currentPlaylist.filter(track => 
-                track.isDownloaded || isArchiveFile({name: track.filename})
-            ).length;
-            
-            const playlistInfo = currentPlaylist.map((track, index) => {
-                let status = '';
-                if (index === currentTrackIndex) {
-                    status = ' (▶ playing)';
-                } else if (track.isDownloaded) {
-                    status = ' ✓ downloaded';
-                } else if (isArchiveFile({name: track.filename})) {
-                    status = ' 🌐 stream';
-                } else {
-                    status = ' ❌ unavailable';
-                }
-                return `${index + 1}. ${track.filename}${status}`;
-            }).join('\n');
-            
-            alert(`MP3 Playlist (${availableCount}/${currentPlaylist.length} available):\n\n${playlistInfo}\n\n✓ = Downloaded MP3\n🌐 = Stream MP3 from Archive.org\n❌ = Not available`);
-        } else {
-            alert('No playlist available');
+        const playlistPanel = document.getElementById('playlistPanel');
+        if (playlistPanel) {
+            playlistPanel.style.display = playlistPanel.style.display === 'block' ? 'none' : 'block';
         }
     }
-    
-    // Keyboard navigation
+
+         // Update playlist panel with current track
+     function updatePlaylistPanel() {
+         const playlistPanel = document.getElementById('playlistPanel');
+         
+         if (!playlistPanel) return;
+         
+         if (currentPlaylist.length === 0) {
+             playlistPanel.innerHTML = `
+                 <div class="playlist-header">
+                     <div class="d-flex justify-content-between align-items-center">
+                         <h6 class="mb-0">Playlist</h6>
+                         <button class="btn btn-sm btn-outline-secondary" onclick="togglePlaylist()">
+                             <i class="bi bi-x-lg"></i>
+                         </button>
+                     </div>
+                 </div>
+                 <div class="playlist-content">
+                     <div class="text-center py-4 text-muted">
+                         <i class="bi bi-music-note-list" style="font-size: 2rem;"></i>
+                         <p class="mt-2 mb-0">No playlist available</p>
+                     </div>
+                 </div>
+             `;
+             return;
+         }
+ 
+         const availableCount = currentPlaylist.filter(track => 
+             track.isDownloaded || isArchiveFile({name: track.filename})
+         ).length;
+ 
+         playlistPanel.innerHTML = `
+             <div class="playlist-header">
+                 <div class="d-flex justify-content-between align-items-center">
+                     <h6 class="mb-0">Playlist (${availableCount}/${currentPlaylist.length})</h6>
+                     <button class="btn btn-sm btn-outline-secondary" onclick="togglePlaylist()">
+                         <i class="bi bi-x-lg"></i>
+                     </button>
+                 </div>
+             </div>
+             <div class="playlist-content">
+                                   ${currentPlaylist.map((track, index) => {
+                      const isPlayable = track.isDownloaded || isArchiveFile({name: track.filename});
+                      const audioElement = document.getElementById('audioElement');
+                      const isCurrent = index === currentTrackIndex && audioElement && !audioElement.paused;
+                      let statusClass = '';
+                      let statusText = '';
+                      
+                      if (track.isDownloaded) {
+                          statusClass = 'downloaded';
+                          statusText = '✓';
+                      } else if (isArchiveFile({name: track.filename})) {
+                          statusClass = 'streamable';
+                          statusText = '🌐';
+                      } else {
+                          statusClass = 'unavailable';
+                          statusText = '❌';
+                      }
+                      
+                      return `
+                          <div class="playlist-track ${isCurrent ? 'current' : ''} ${isPlayable ? '' : 'unavailable'}" 
+                               onclick="${isPlayable ? `playAudio('${currentIdentifier}', '${track.filename}', ${track.isDownloaded}, ${track.index}, '${track.title}', '${track.artist}')` : ''}">
+                              <span class="playlist-track-number">${index + 1}</span>
+                              <div class="playlist-track-info">
+                                  <div class="playlist-track-title">${track.title || track.filename}</div>
+                                  <div class="playlist-track-filename">${track.filename}</div>
+                              </div>
+                              <span class="playlist-track-status ${statusClass}">
+                                  ${statusText}
+                              </span>
+                          </div>
+                      `;
+                  }).join('')}
+             </div>
+         `;
+     }
+
+    // Keyboard navigation for playlist
     document.addEventListener('keydown', function(e) {
         if (currentPlaylist.length === 0) return;
         
@@ -694,7 +944,7 @@
             
             // Check if track is playable (downloaded OR can stream from Archive.org)
             if (track.isDownloaded || isArchiveFile({name: track.filename})) {
-                playAudio(track.identifier, track.filename, track.isDownloaded, track.index);
+                playAudio(track.identifier, track.filename, track.isDownloaded, track.index, track.title, track.artist);
                 return;
             }
             nextIndex++;
@@ -717,7 +967,7 @@
             
             // Check if track is playable (downloaded OR can stream from Archive.org)
             if (track.isDownloaded || isArchiveFile({name: track.filename})) {
-                playAudio(track.identifier, track.filename, track.isDownloaded, track.index);
+                playAudio(track.identifier, track.filename, track.isDownloaded, track.index, track.title, track.artist);
                 return;
             }
             prevIndex--;
@@ -738,6 +988,7 @@
                 nextTrack();
             });
         }
+        updatePlaylistPanel(); // Initial update
     });
 </script>
 {% endblock %} 
