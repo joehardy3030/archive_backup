@@ -1021,6 +1021,12 @@
     let currentTrackIndex = 0;
     let currentIdentifier = '';
     
+    // Global event handler for audio ended event
+    function audioEndedHandler() {
+        console.log('Audio ended event fired, advancing to next track...');
+        nextTrack();
+    }
+    
     // Audio playback function
     function playAudio(identifier, filename, isDownloaded, trackIndex) {
         const audioPlayer = document.getElementById('audioPlayer');
@@ -1078,6 +1084,10 @@
             nowPlaying.textContent = `Error playing ${filename}, skipping...`;
             setTimeout(() => nextTrack(), 1000); // Skip to next track after 1 second
         };
+        
+        // Ensure the ended event listener is attached for auto-advance
+        audioElement.removeEventListener('ended', audioEndedHandler); // Remove any existing listener
+        audioElement.addEventListener('ended', audioEndedHandler); // Add the listener
         
         // Play the audio
         audioElement.play().catch(error => {
@@ -1141,14 +1151,17 @@
     
     // Next track function - find next available track
     function nextTrack() {
+        console.log('nextTrack called, currentTrackIndex:', currentTrackIndex, 'playlist length:', currentPlaylist.length);
         let nextIndex = currentTrackIndex + 1;
         
         // Find the next available (playable) track
         while (nextIndex < currentPlaylist.length) {
             const track = currentPlaylist[nextIndex];
+            console.log('Checking track', nextIndex, ':', track.filename, 'isDownloaded:', track.isDownloaded);
             
             // Check if track is playable (downloaded OR can stream from Archive.org)
             if (track.isDownloaded || isArchiveFile({name: track.filename})) {
+                console.log('Playing next track:', track.filename);
                 playAudio(track.identifier, track.filename, track.isDownloaded, track.index);
                 return;
             }
@@ -1156,6 +1169,7 @@
         }
         
         // No more playable tracks, end of playlist
+        console.log('No more playable tracks, end of playlist');
         const nowPlaying = document.getElementById('nowPlaying');
         if (nowPlaying) {
             nowPlaying.textContent = 'End of playlist';
@@ -1185,14 +1199,6 @@
         }
     }
     
-    // Auto-play next track when current ends
-    document.addEventListener('DOMContentLoaded', function() {
-        const audioElement = document.getElementById('audioElement');
-        if (audioElement) {
-            audioElement.addEventListener('ended', function() {
-                nextTrack();
-            });
-        }
-    });
+    // Auto-play next track when current ends - now handled in playAudio function
 </script>
 {% endblock %} 
