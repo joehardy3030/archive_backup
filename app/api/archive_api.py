@@ -265,7 +265,18 @@ class ArchiveAPI:
             storage_dir = os.path.join("storage", "files", identifier)
             os.makedirs(storage_dir, exist_ok=True)
             
-            local_path = os.path.join(storage_dir, filename)
+            # Support nested paths present in some collections (e.g., dac2025-08-01.mk4/dac2025-08-01.mk4.d1t01.mp3)
+            # Sanitize and normalize the relative path to prevent path traversal
+            sanitized_filename = (filename or "").replace("\\", "/").lstrip("/")
+            normalized_rel_path = os.path.normpath(sanitized_filename)
+            if normalized_rel_path.startswith(".."):
+                print(f"[ArchiveAPI] Unsafe filename detected, refusing to write outside storage: {filename}")
+                return None
+
+            local_path = os.path.join(storage_dir, normalized_rel_path)
+
+            # Ensure any intermediate directories exist for nested paths
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
             
             print(f"[ArchiveAPI] Starting download from {download_url} to {local_path}")
             
@@ -290,6 +301,10 @@ class ArchiveAPI:
             
         except requests.exceptions.RequestException as e:
             print(f"[ArchiveAPI] Download failed with error: {str(e)} for URL: {download_url}")
+            return None
+        except OSError as e:
+            # Handle filesystem errors (e.g., invalid path, permission issues)
+            print(f"[ArchiveAPI] Filesystem error saving {identifier}/{filename}: {e}")
             return None
     
     def _is_creator_based(self, collection: str) -> bool:

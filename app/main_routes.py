@@ -358,7 +358,7 @@ def health_check():
             'error': str(e)
         }), 500 
 
-@main_bp.route('/play/<identifier>/<filename>')
+@main_bp.route('/play/<identifier>/<path:filename>')
 def play_file(identifier, filename):
     """Serve audio files for playback"""
     try:
